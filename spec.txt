@@ -1,0 +1,205 @@
+ETL Portal - Full Stack Application Prompt
+Build a multi-user web-based ETL portal that allows non-technical users to extract data from Google Sheets or CSV files and load it into PostgreSQL or Amazon Redshift databases with transformation capabilities and scheduled automation.
+Tech Stack
+
+Frontend: React SPA with a multi-step wizard interface
+Backend: Python (FastAPI preferred)
+Job Scheduler: Apache Airflow for scheduled ETL jobs
+Database: PostgreSQL for application data (user configs, job definitions, mappings, credentials)
+Deployment: Docker Compose for local/server deployment
+Authentication: SSO via Okta or Google OAuth
+
+Core Features
+1. Authentication & User Management
+
+Implement SSO authentication (Okta and Google OAuth)
+Two user roles:
+
+Admin: Full access to all ETL jobs, user management, system settings
+Regular User: Can view, edit, run, and configure ETL jobs (collaborative access)
+
+
+Multi-user support where multiple users can work on the same ETL configurations
+
+2. Multi-Step Wizard Interface
+Step 1: Data Source Selection
+
+Choose between Google Sheets (OAuth connection) or CSV file upload
+For Google Sheets: OAuth flow to access user's sheets, browse and select sheet
+For CSV: Drag-and-drop file upload with preview
+Support files up to 1M rows
+Show data preview (first 100 rows)
+
+Step 2: Destination Database
+
+Select database type: PostgreSQL or Amazon Redshift
+Choose between creating new table or using existing table
+Securely save database credentials (encrypted storage)
+Connection testing before proceeding
+
+Step 3: Schema Mapping & Auto-Detection
+
+Auto-detect column mappings between source and destination
+Allow users to manually adjust mappings
+Column operations:
+
+Rename columns
+Data type conversions (text, number, date, boolean)
+Add UUID column as identifier
+Create calculated/derived columns (simple formulas: math operations, string concatenation, date operations)
+
+
+
+Step 4: Data Transformation Rules
+
+Data quality validations:
+
+Trim whitespace
+Null value checks
+Data type validation
+Uniqueness validation
+
+
+Handle schema mismatches:
+
+Attempt automatic type conversion with warnings
+Flag errors for user to resolve manually
+Show preview of transformed data
+
+
+
+Step 5: Load Configuration
+
+Choose load strategy:
+
+Insert: Append new records
+Update/Upsert: User defines primary key or composite key rules for duplicate detection
+
+
+Duplicate detection: Allow users to create rules based on combination of column values
+Batch size configuration for large files
+
+Step 6: Scheduling (Optional)
+
+One-time run or scheduled execution
+Schedule options: Daily, every 4 hours, custom cron expression
+Reuse saved mapping/transformation rules automatically
+Enable/disable scheduled jobs
+
+3. Job Execution & Monitoring
+
+Progress indicator with percentage complete for large file imports
+Real-time logging visible to users
+Error handling with detailed error messages
+Job history and audit trail
+Ability to pause/resume/cancel running jobs
+Email notifications on job completion/failure (optional)
+
+4. Data Processing Architecture
+
+Backend processes large files efficiently:
+
+Stream processing for files with 100K+ rows
+Chunk data into batches (10K rows per batch)
+Progress tracking across sessions
+
+
+Airflow DAGs for scheduled jobs:
+
+Each ETL configuration creates an Airflow DAG
+DAG handles: extract → validate → transform → load
+Retry logic and failure alerts
+
+
+
+5. Dashboard & Management
+
+List all ETL jobs with status (active, scheduled, failed, completed)
+Edit existing ETL configurations
+Clone ETL jobs for reuse
+Delete jobs
+View job run history and logs
+Export job configurations
+
+Technical Requirements
+Security
+
+Encrypt database credentials at rest
+Secure OAuth token storage
+HTTPS only in production
+Role-based access control (RBAC)
+Input validation and SQL injection prevention
+
+Database Schema
+Design PostgreSQL schema for:
+
+Users (id, email, role, oauth_provider, created_at)
+ETL Jobs (id, name, source_type, source_config, destination_config, created_by, updated_at)
+Column Mappings (job_id, source_column, dest_column, data_type, transformations)
+Schedules (job_id, cron_expression, enabled, last_run, next_run)
+Job Runs (id, job_id, status, started_at, completed_at, rows_processed, errors)
+Credentials (id, db_type, connection_string_encrypted, created_by)
+
+Docker Compose Setup
+Include services:
+
+React frontend (Nginx)
+FastAPI backend
+PostgreSQL (app database)
+Airflow (webserver, scheduler, worker)
+Redis (for Airflow)
+
+API Endpoints (Backend)
+
+POST /auth/login - SSO authentication
+GET /api/jobs - List all ETL jobs
+POST /api/jobs - Create new ETL job
+PUT /api/jobs/{id} - Update ETL job
+DELETE /api/jobs/{id} - Delete ETL job
+POST /api/jobs/{id}/run - Trigger immediate run
+GET /api/jobs/{id}/runs - Get job execution history
+POST /api/sources/google-sheets/auth - Initiate Google OAuth
+POST /api/sources/csv/upload - Upload CSV file
+GET /api/sources/preview - Preview source data
+POST /api/destinations/test - Test database connection
+GET /api/destinations/tables - List existing tables
+POST /api/validate - Validate transformations and mappings
+
+Frontend Components
+
+LoginPage (SSO selection)
+Dashboard (job list, statistics)
+WizardFlow (multi-step ETL configuration)
+SourceSelector
+DestinationConfig
+MappingEditor (drag-drop column mapping)
+TransformationBuilder
+ScheduleConfig
+JobMonitor (real-time progress)
+LogViewer
+
+User Experience Priorities
+
+Intuitive wizard with clear progress indication
+Helpful error messages in plain language
+Undo/back buttons in wizard
+Autosave draft configurations
+Responsive design (works on tablets)
+Loading states and skeleton screens
+
+Error Handling
+
+Graceful handling of connection failures
+Validation errors shown inline with suggestions
+Rollback capability for failed loads
+Detailed logs accessible to users
+Retry mechanisms for transient failures
+
+Nice-to-Have Features (if time permits)
+
+Data preview before final load
+Column statistics and data profiling
+Export job configurations as JSON
+Import pre-configured jobs
+Slack/email notifications
+Job templates for common ETL patterns
