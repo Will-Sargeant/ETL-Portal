@@ -103,9 +103,26 @@ async def create_etl_job(
             job_id=db_job.id,
             cron_expression=schedule_data.cron_expression,
             enabled=schedule_data.enabled,
-            airflow_dag_id=f"etl_job_{db_job.id}"
+            airflow_dag_id=f"etl_job_{db_job.id}_scheduled"
         )
         db.add(db_schedule)
+        await db.flush()  # Flush to get the schedule ID
+
+        # Generate Airflow DAG for the schedule
+        try:
+            from app.services.airflow_service import AirflowService
+            from app.services.airflow_client import airflow_client
+
+            airflow_service = AirflowService()
+            dag_id = airflow_service.generate_scheduled_dag(db_job, db_schedule)
+
+            # Unpause the DAG if schedule is enabled
+            if db_schedule.enabled:
+                await airflow_client.unpause_dag(dag_id)
+        except Exception as e:
+            # Log error but don't fail the job creation
+            import logging
+            logging.error(f"Failed to generate Airflow DAG for job {db_job.id}: {e}")
 
     await db.commit()
     await db.refresh(db_job)
@@ -198,6 +215,13 @@ async def update_column_mappings(
     mappings: List[ColumnMappingCreate]
 ) -> List[ColumnMapping]:
     """Update column mappings for a job (replaces all existing mappings)."""
+    from app.services.ddl_generator import DDLGenerator
+
+    # Get the job to access schema/table info
+    job = await get_etl_job(db, job_id)
+    if not job:
+        raise ValueError(f"Job {job_id} not found")
+
     # Delete existing mappings
     await db.execute(
         select(ColumnMapping).where(ColumnMapping.job_id == job_id)
@@ -211,12 +235,48 @@ async def update_column_mappings(
     # Create new mappings
     new_mappings = []
     for mapping_data in mappings:
+        # Map frontend field names to backend column names
+        mapping_dict = mapping_data.model_dump(exclude_none=True)
+
+        # Handle transformations array or single transformation
+        transformations_value = mapping_dict.get('transformations')
+        if not transformations_value and mapping_dict.get('transformation'):
+            # Convert single transformation to array
+            transformations_value = [mapping_dict['transformation']]
+
         db_mapping = ColumnMapping(
             job_id=job_id,
-            **mapping_data.model_dump()
+            source_column=mapping_dict['source_column'],
+            source_data_type=mapping_dict.get('source_type'),
+            dest_column=mapping_dict['destination_column'],
+            dest_data_type=mapping_dict['destination_type'],
+            transformations=transformations_value,
+            is_nullable=mapping_dict.get('is_nullable', True),
+            default_value=mapping_dict.get('default_value'),
+            exclude=mapping_dict.get('exclude', False),
+            is_calculated=mapping_dict.get('is_calculated', False),
+            calculation_expression=mapping_dict.get('expression'),
+            column_order=mapping_dict.get('column_order', 0),
+            is_primary_key=mapping_dict.get('is_primary_key', False),
         )
         db.add(db_mapping)
         new_mappings.append(db_mapping)
+
+    # Regenerate DDL with new column mappings
+    schema = job.destination_config.get('schema', 'public')
+    table = job.destination_config.get('table') or job.destination_config.get('table_name')
+
+    if table and mappings:
+        new_ddl = DDLGenerator.generate(
+            schema=schema,
+            table=table,
+            columns=mappings,
+            db_type=job.destination_type.value if hasattr(job.destination_type, 'value') else job.destination_type
+        )
+
+        # Update job with new DDL
+        job.new_table_ddl = new_ddl
+        db.add(job)
 
     await db.commit()
 

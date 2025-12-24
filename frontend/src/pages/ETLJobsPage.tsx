@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -6,10 +7,15 @@ import { JobWizard } from '@/features/etl-jobs/JobWizard'
 import { JobsList } from '@/features/etl-jobs/JobsList'
 
 export function ETLJobsPage() {
+  const navigate = useNavigate()
   const [showWizard, setShowWizard] = useState(false)
 
   const handleJobCreated = () => {
     setShowWizard(false)
+  }
+
+  const handleViewJob = (jobId: number) => {
+    navigate(`/jobs/${jobId}`)
   }
 
   return (
@@ -39,7 +45,7 @@ export function ETLJobsPage() {
           <JobWizard onSuccess={handleJobCreated} />
         </div>
       ) : (
-        <JobsList />
+        <JobsList onViewJob={handleViewJob} />
       )}
     </div>
   )

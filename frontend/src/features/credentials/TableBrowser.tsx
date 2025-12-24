@@ -1,15 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import { Table2, Columns } from 'lucide-react'
+import { Table2, Columns, Loader2 } from 'lucide-react'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { destinationsApi } from '@/lib/api/credentials'
 
 interface TableBrowserProps {
   credentialId: number
-  credentialName: string
+  credentialName?: string  // Optional since it's shown in Sheet header
 }
 
-export function TableBrowser({ credentialId, credentialName }: TableBrowserProps) {
+export function TableBrowser({ credentialId }: TableBrowserProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['tables', credentialId],
     queryFn: () => destinationsApi.listTables(credentialId),
@@ -17,38 +16,33 @@ export function TableBrowser({ credentialId, credentialName }: TableBrowserProps
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="p-12 text-center">
-          <p className="text-muted-foreground">Loading tables...</p>
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        <p className="ml-2 text-muted-foreground">Loading tables...</p>
+      </div>
     )
   }
 
   if (error) {
     return (
-      <Card>
-        <CardContent className="p-12 text-center">
-          <p className="text-destructive">Failed to load tables</p>
-          <p className="text-sm text-muted-foreground mt-2">
-            {error instanceof Error ? error.message : 'Unknown error'}
-          </p>
-        </CardContent>
-      </Card>
+      <div className="p-12 text-center">
+        <p className="text-destructive">Failed to load tables</p>
+        <p className="text-sm text-muted-foreground mt-2">
+          {error instanceof Error ? error.message : 'Unknown error'}
+        </p>
+      </div>
     )
   }
 
   const tables = data?.tables || []
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Tables in {credentialName}</CardTitle>
-        <CardDescription>
+    <div>
+      <div className="mb-4">
+        <p className="text-sm text-muted-foreground">
           {tables.length} table{tables.length !== 1 ? 's' : ''} found
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </p>
+      </div>
         {tables.length === 0 ? (
           <div className="text-center p-8">
             <Table2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
@@ -56,9 +50,12 @@ export function TableBrowser({ credentialId, credentialName }: TableBrowserProps
           </div>
         ) : (
           <div className="space-y-2">
-            {tables.map((table, idx) => (
+            {tables.map((table, idx) => {
+              // Handle both schema_name and schema field names
+              const schemaName = table.schema_name || (table as any).schema || 'public'
+              return (
               <div
-                key={`${table.schema_name}.${table.name}-${idx}`}
+                key={`${schemaName}.${table.name}-${idx}`}
                 className="p-3 border rounded-lg hover:bg-muted/30 transition-colors"
               >
                 <div className="flex items-start justify-between">
@@ -66,7 +63,7 @@ export function TableBrowser({ credentialId, credentialName }: TableBrowserProps
                     <div className="flex items-center gap-2 mb-1">
                       <Table2 className="w-4 h-4 text-primary" />
                       <span className="font-medium">
-                        {table.schema_name}.{table.name}
+                        {schemaName}.{table.name}
                       </span>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -103,10 +100,9 @@ export function TableBrowser({ credentialId, credentialName }: TableBrowserProps
                   </details>
                 )}
               </div>
-            ))}
+            )})}
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   )
 }

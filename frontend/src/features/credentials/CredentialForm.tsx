@@ -13,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { credentialsApi, destinationsApi } from '@/lib/api/credentials'
 import type { CredentialCreate, DatabaseType, ConnectionTestResponse } from '@/types/credential'
 
@@ -96,15 +95,7 @@ export function CredentialForm({ onSuccess }: CredentialFormProps) {
   const isFormValid = formData.name && formData.host && formData.database && formData.username && formData.password
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add Database Credential</CardTitle>
-        <CardDescription>
-          Save database credentials for use in ETL jobs
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Credential Name *</Label>
@@ -249,7 +240,5 @@ export function CredentialForm({ onSuccess }: CredentialFormProps) {
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
   )
 }

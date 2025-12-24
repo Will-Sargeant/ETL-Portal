@@ -6,7 +6,7 @@ export interface ScheduleConfig {
 export interface JobRunResponse {
   id: number
   job_id: number
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'retrying'
   started_at: string
   completed_at?: string
   message?: string

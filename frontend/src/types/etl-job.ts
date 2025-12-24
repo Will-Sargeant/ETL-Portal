@@ -20,7 +20,8 @@ export interface ColumnMapping {
   destination_column: string
   source_type: string
   destination_type: string
-  transformation?: string
+  transformation?: string  // Deprecated: single transformation
+  transformations?: string[]  // Array of transformations to apply in order
   is_nullable: boolean
   default_value?: string
   exclude?: boolean

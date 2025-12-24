@@ -4,6 +4,7 @@ import { Database, Upload, Workflow } from 'lucide-react'
 import { CSVUploadPage } from './pages/CSVUploadPage'
 import { CredentialsPage } from './pages/CredentialsPage'
 import { ETLJobsPage } from './pages/ETLJobsPage'
+import { JobDetailsPage } from './pages/JobDetailsPage'
 
 function App() {
   return (
@@ -46,6 +47,7 @@ function App() {
           <Route path="/" element={<CSVUploadPage />} />
           <Route path="/credentials" element={<CredentialsPage />} />
           <Route path="/jobs" element={<ETLJobsPage />} />
+          <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
         </Routes>
         <Toaster />
       </div>

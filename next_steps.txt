@@ -1,0 +1,23 @@
+1/ I'll fix the cosmetic issue where triggered_by always shows 'manual' instead of distinguishing between manual and scheduled executions. The issue is that the execute endpoint doesn't know whether it was called manually or from a scheduled Airflow DAG. I'll add a query parameter to the endpoint to allow specifying the trigger source.
+
+2/ Remove play button from ETL Jobs list and change the date from created date to last executed date
+
+3/ Update status of ETL jobs to the following; 
+- created but never run - draft
+- run / running to schedule - live
+- paused - paused 
+
+Add a way to pause an ETL job (default should be the play button that already exists, but if clicked it should change status to paused)
+
+Sense check if this makes sense before implementing
+
+
+4/ add google sheets functionality 
+
+
+5/ fix transformations 
+- check full list of transformations on duco and replicate 
+- add description of transformations 
+- align etl job and wizard (they should be the same) 
+- add custom column / calculated column
+- make sure we have updated date / inserted date by default in all cases

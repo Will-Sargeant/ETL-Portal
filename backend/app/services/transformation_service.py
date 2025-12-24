@@ -76,6 +76,33 @@ class TransformationService:
             )
             raise
 
+    def apply_transformations(
+        self,
+        series: pd.Series,
+        transformations: list
+    ) -> pd.Series:
+        """
+        Apply multiple transformations to a pandas Series in order.
+
+        Args:
+            series: The pandas Series to transform
+            transformations: List of transformation names to apply in order
+
+        Returns:
+            Transformed pandas Series
+
+        Raises:
+            ValueError: If any transformation is not recognized
+        """
+        if not transformations:
+            return series
+
+        result = series
+        for transformation in transformations:
+            result = self.apply_transformation(result, transformation)
+
+        return result
+
     def evaluate_expression(
         self,
         df: pd.DataFrame,

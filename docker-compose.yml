@@ -163,10 +163,12 @@ services:
       - REDIS_URL=redis://redis:6379/1
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - UPLOAD_DIR=/app/uploads
+      - AIRFLOW_DAGS_DIR=/opt/airflow/dags
       - ENVIRONMENT=development
     volumes:
       - ./backend:/app
       - ./uploads:/app/uploads:rw
+      - ./airflow/dags:/opt/airflow/dags:rw
     ports:
       - "8000:8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

@@ -12,6 +12,7 @@ class RunStatus(str, enum.Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    RETRYING = "retrying"
     CANCELLED = "cancelled"
     PAUSED = "paused"
 

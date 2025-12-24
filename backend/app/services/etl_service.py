@@ -239,13 +239,20 @@ class ETLService:
 
                 series = df[mapping.source_column].copy()
 
-                # Apply transformation if specified
+                # Apply transformations if specified (handles both list and single string)
                 if mapping.transformations:
                     try:
-                        series = transformation_service.apply_transformation(
-                            series,
-                            mapping.transformations
-                        )
+                        # Handle both list and single transformation for backward compatibility
+                        if isinstance(mapping.transformations, list):
+                            series = transformation_service.apply_transformations(
+                                series,
+                                mapping.transformations
+                            )
+                        else:
+                            series = transformation_service.apply_transformation(
+                                series,
+                                mapping.transformations
+                            )
                         logger.info(
                             "transformation_applied",
                             source_column=mapping.source_column,
@@ -350,28 +357,127 @@ class ETLService:
         try:
             # Create table if needed (BEFORE starting batch processing)
             if job.create_new_table and job.new_table_ddl:
-                logger.info("creating_new_table", table=table)
-                try:
-                    await conn.execute(job.new_table_ddl)
-                    logger.info("table_created", table=table)
-                except Exception as e:
-                    logger.error("table_creation_failed", table=table, error=str(e))
-                    raise ValueError(f"Failed to create table {schema}.{table}: {str(e)}")
+                # Check if table already exists
+                table_exists_query = f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_schema = '{schema}'
+                        AND table_name = '{table}'
+                    );
+                """
+                table_exists = await conn.fetchval(table_exists_query)
+
+                if not table_exists:
+                    logger.info("creating_new_table", table=table)
+                    try:
+                        await conn.execute(job.new_table_ddl)
+                        logger.info("table_created", table=table)
+                    except Exception as e:
+                        logger.error("table_creation_failed", table=table, error=str(e))
+                        raise ValueError(f"Failed to create table {schema}.{table}: {str(e)}")
+                else:
+                    logger.info("table_already_exists_skipping_creation", table=table)
+
+            # Get column names from dataframe
+            columns = list(df.columns)
+            column_names_str = ', '.join([f'"{col}"' for col in columns])
+
+            # Check if table exists and get its schema
+            existing_columns_query = f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}' AND table_name = '{table}'
+                ORDER BY ordinal_position
+            """
+            existing_columns_result = await conn.fetch(existing_columns_query)
+            existing_columns = [row['column_name'] for row in existing_columns_result]
+            table_exists = len(existing_columns) > 0
 
             # Handle load strategy
             if job.load_strategy == "truncate_insert":
-                logger.info("truncating_table", table=table)
-                await conn.execute(f'TRUNCATE TABLE "{schema}"."{table}"')
+                # Check if table schema matches current column mappings
+                # If not, drop and recreate the table
+                try:
+                    # If table doesn't exist, create it
+                    if not table_exists:
+                        logger.info("table_does_not_exist_creating_for_truncate_insert", table=table)
+                        if job.new_table_ddl:
+                            await conn.execute(job.new_table_ddl)
+                            logger.info("table_created", table=table)
+                        else:
+                            raise ValueError(f"Table {schema}.{table} does not exist and no DDL provided")
+                    # Check if columns match
+                    elif set(existing_columns) != set(columns):
+                        logger.info(
+                            "schema_mismatch_detected",
+                            table=table,
+                            existing_columns=existing_columns,
+                            new_columns=columns,
+                            action="dropping_and_recreating_table"
+                        )
+
+                        # Drop the existing table
+                        await conn.execute(f'DROP TABLE IF EXISTS "{schema}"."{table}" CASCADE')
+                        logger.info("table_dropped", table=table)
+
+                        # Recreate table using DDL if available
+                        if job.new_table_ddl:
+                            await conn.execute(job.new_table_ddl)
+                            logger.info("table_recreated_from_ddl", table=table)
+                        else:
+                            # Generate DDL from column mappings
+                            logger.warning(
+                                "no_ddl_available",
+                                table=table,
+                                message="Cannot recreate table without DDL"
+                            )
+                            raise ValueError(
+                                f"Schema mismatch detected but no DDL available to recreate table. "
+                                f"Expected columns: {columns}, Found: {existing_columns}"
+                            )
+                    else:
+                        # Schema matches, just truncate
+                        logger.info("truncating_table", table=table)
+                        await conn.execute(f'TRUNCATE TABLE "{schema}"."{table}"')
+
+                except asyncpg.exceptions.UndefinedTableError:
+                    # Table doesn't exist, create it
+                    if job.new_table_ddl:
+                        logger.info("table_does_not_exist_creating", table=table)
+                        await conn.execute(job.new_table_ddl)
+                        logger.info("table_created", table=table)
+                    else:
+                        raise ValueError(f"Table {schema}.{table} does not exist and no DDL provided")
+            else:
+                # For INSERT and UPSERT strategies, validate schema matches
+                if table_exists:
+                    if set(existing_columns) != set(columns):
+                        logger.error(
+                            "schema_mismatch_for_upsert_or_insert",
+                            table=table,
+                            load_strategy=job.load_strategy,
+                            existing_columns=existing_columns,
+                            expected_columns=columns
+                        )
+                        raise ValueError(
+                            f"Schema mismatch detected for {job.load_strategy} strategy. "
+                            f"Table '{schema}.{table}' has columns {existing_columns} but job expects {columns}. "
+                            f"Either use TRUNCATE_INSERT strategy to auto-recreate the table, or update the job's column mappings to match the existing table schema."
+                        )
+                else:
+                    # Table doesn't exist for INSERT/UPSERT, create it if we have DDL
+                    if job.new_table_ddl:
+                        logger.info("creating_table_for_insert_or_upsert", table=table, strategy=job.load_strategy)
+                        await conn.execute(job.new_table_ddl)
+                        logger.info("table_created", table=table)
+                    else:
+                        raise ValueError(f"Table {schema}.{table} does not exist and no DDL provided")
 
             # Prepare data for insertion
             total_rows = len(df)
             batch_size = job.batch_size or 10000
             rows_processed = 0
             rows_failed = 0
-
-            # Get column names
-            columns = list(df.columns)
-            column_names_str = ', '.join([f'"{col}"' for col in columns])
 
             for start_idx in range(0, total_rows, batch_size):
                 end_idx = min(start_idx + batch_size, total_rows)

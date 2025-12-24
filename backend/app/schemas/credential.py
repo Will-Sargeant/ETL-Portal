@@ -80,7 +80,7 @@ class ConnectionTestResponse(BaseModel):
 
 class TableInfo(BaseModel):
     """Schema for database table information."""
-    schema_name: str = Field(..., alias="schema")
+    schema_name: str = Field(..., alias="schema", serialization_alias="schema_name")
     name: str
     row_count: Optional[int] = None
     column_count: int

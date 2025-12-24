@@ -100,6 +100,79 @@ async def delete_job(
     return None
 
 
+@router.post("/{job_id}/regenerate-ddl")
+async def regenerate_ddl(
+    job_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Regenerate DDL for an ETL job based on current column mappings."""
+    from app.services.ddl_generator import DDLGenerator
+
+    # Get job
+    job = await crud.get_etl_job(db, job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ETL job not found"
+        )
+
+    # Get column mappings
+    if not job.column_mappings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job has no column mappings"
+        )
+
+    # Get destination config
+    schema = job.destination_config.get('schema', 'public')
+    table = job.destination_config.get('table') or job.destination_config.get('table_name')
+
+    if not table:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job destination config missing table name"
+        )
+
+    # Convert ColumnMapping models to schema format for DDL generator
+    from app.schemas.etl_job import ColumnMappingCreate
+    column_schemas = []
+    for mapping in job.column_mappings:
+        column_schema = ColumnMappingCreate(
+            source_column=mapping.source_column,
+            destination_column=mapping.dest_column,
+            source_type=mapping.source_data_type or 'text',
+            destination_type=mapping.dest_data_type,
+            transformations=mapping.transformations,
+            is_nullable=mapping.is_nullable,
+            default_value=mapping.default_value,
+            exclude=mapping.exclude,
+            is_calculated=mapping.is_calculated,
+            expression=mapping.calculation_expression,
+            column_order=mapping.column_order,
+            is_primary_key=mapping.is_primary_key
+        )
+        column_schemas.append(column_schema)
+
+    # Generate DDL
+    new_ddl = DDLGenerator.generate(
+        schema=schema,
+        table=table,
+        columns=column_schemas,
+        db_type=job.destination_type.value if hasattr(job.destination_type, 'value') else job.destination_type
+    )
+
+    # Update job
+    job.new_table_ddl = new_ddl
+    await db.commit()
+    await db.refresh(job)
+
+    return {
+        "job_id": job_id,
+        "ddl": new_ddl,
+        "message": "DDL regenerated successfully"
+    }
+
+
 @router.put("/{job_id}/mappings", response_model=List[ColumnMappingResponse])
 async def update_mappings(
     job_id: int,

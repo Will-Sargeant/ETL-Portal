@@ -1,9 +1,20 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Database, Trash2, TestTube2, Table2 } from 'lucide-react'
+import { Database, Trash2, TestTube2, Table2, AlertTriangle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { credentialsApi, destinationsApi } from '@/lib/api/credentials'
 import type { Credential } from '@/types/credential'
 
@@ -14,6 +25,8 @@ interface CredentialListProps {
 
 export function CredentialList({ onSelectCredential, onViewTables }: CredentialListProps) {
   const queryClient = useQueryClient()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [credentialToDelete, setCredentialToDelete] = useState<{ id: number; name: string } | null>(null)
 
   const { data: credentials, isLoading } = useQuery({
     queryKey: ['credentials'],
@@ -25,6 +38,8 @@ export function CredentialList({ onSelectCredential, onViewTables }: CredentialL
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credentials'] })
       toast.success('Credential deleted successfully')
+      setDeleteDialogOpen(false)
+      setCredentialToDelete(null)
     },
     onError: (error: any) => {
       const message = error.response?.data?.detail || 'Failed to delete credential'
@@ -47,10 +62,20 @@ export function CredentialList({ onSelectCredential, onViewTables }: CredentialL
     },
   })
 
-  const handleDelete = (id: number, name: string) => {
-    if (confirm(`Are you sure you want to delete credential "${name}"?`)) {
-      deleteMutation.mutate(id)
+  const handleDeleteClick = (id: number, name: string) => {
+    setCredentialToDelete({ id, name })
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (credentialToDelete) {
+      deleteMutation.mutate(credentialToDelete.id)
     }
+  }
+
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false)
+    setCredentialToDelete(null)
   }
 
   const getDbTypeLabel = (type: string) => {
@@ -88,6 +113,7 @@ export function CredentialList({ onSelectCredential, onViewTables }: CredentialL
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle>Saved Credentials</CardTitle>
@@ -141,7 +167,7 @@ export function CredentialList({ onSelectCredential, onViewTables }: CredentialL
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleDelete(credential.id, credential.name)}
+                  onClick={() => handleDeleteClick(credential.id, credential.name)}
                   disabled={deleteMutation.isPending}
                   title="Delete"
                 >
@@ -153,5 +179,34 @@ export function CredentialList({ onSelectCredential, onViewTables }: CredentialL
         </div>
       </CardContent>
     </Card>
+
+    {/* Delete Confirmation Dialog */}
+    <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="w-5 h-5" />
+            <AlertDialogTitle>Delete Credential</AlertDialogTitle>
+          </div>
+          <AlertDialogDescription>
+            Are you sure you want to delete the credential{' '}
+            <span className="font-semibold">&quot;{credentialToDelete?.name}&quot;</span>?
+            <br />
+            <br />
+            This action cannot be undone. Any ETL jobs using this credential may fail to execute.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={handleCancelDelete}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleConfirmDelete}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>
   )
 }

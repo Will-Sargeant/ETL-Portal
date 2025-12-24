@@ -21,6 +21,7 @@ class RunStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    RETRYING = "retrying"
 
 
 class SourceType(str, Enum):
@@ -48,7 +49,8 @@ class ColumnMappingCreate(BaseModel):
     destination_column: str = Field(..., description="Destination column name")
     source_type: str = Field(..., description="Source data type")
     destination_type: str = Field(..., description="Destination data type")
-    transformation: Optional[str] = Field(None, description="Transformation function")
+    transformation: Optional[str] = Field(None, description="Single transformation function (deprecated)")
+    transformations: Optional[List[str]] = Field(None, description="List of transformation functions to apply in order")
     is_nullable: bool = Field(default=True, description="Whether the column is nullable")
     default_value: Optional[str] = Field(None, description="Default value if source is null")
     exclude: bool = Field(default=False, description="Skip this column in the load")
@@ -66,7 +68,8 @@ class ColumnMappingResponse(BaseModel):
     destination_column: str = Field(..., validation_alias="dest_column")
     source_type: str = Field(..., validation_alias="source_data_type")
     destination_type: str = Field(..., validation_alias="dest_data_type")
-    transformation: Optional[str] = Field(None, validation_alias="transformations")
+    transformation: Optional[str] = Field(None, description="Single transformation (deprecated)")
+    transformations: Optional[List[str]] = Field(None, description="List of transformations")
     is_nullable: bool = Field(default=True)
     default_value: Optional[str] = Field(None)
     exclude: bool = Field(default=False)
@@ -84,6 +87,28 @@ class ScheduleCreate(BaseModel):
     """Schema for creating a schedule."""
     cron_expression: str = Field(..., min_length=1, max_length=100, description="Cron expression")
     enabled: bool = Field(default=True, description="Whether the schedule is enabled")
+
+
+class ScheduleUpdate(BaseModel):
+    """Schema for updating a schedule."""
+    cron_expression: Optional[str] = Field(None, min_length=1, max_length=100, description="Cron expression")
+    enabled: Optional[bool] = Field(None, description="Whether the schedule is enabled")
+
+
+class ScheduleResponse(BaseModel):
+    """Schema for schedule response."""
+    id: int
+    job_id: int
+    cron_expression: str
+    enabled: bool
+    last_run: Optional[datetime] = None
+    next_run: Optional[datetime] = None
+    airflow_dag_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class ETLJobCreate(BaseModel):
