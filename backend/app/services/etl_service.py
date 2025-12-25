@@ -354,6 +354,10 @@ class ETLService:
         # Connect to PostgreSQL using asyncpg
         conn = await asyncpg.connect(conn_string)
 
+        # Ensure destination schema exists
+        logger.info("ensuring_schema_exists", schema=schema)
+        await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+
         try:
             # Create table if needed (BEFORE starting batch processing)
             if job.create_new_table and job.new_table_ddl:
