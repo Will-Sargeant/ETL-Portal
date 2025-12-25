@@ -245,7 +245,9 @@ export function JobDetailsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Status</p>
                   <div className="flex items-center gap-2">
-                    <Badge className={STATUS_COLORS[job.status]}>{job.status}</Badge>
+                    <Badge className={STATUS_COLORS[job.status]}>
+                      {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                    </Badge>
                     {job.is_paused && (
                       <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
                         <Pause className="w-3 h-3 mr-1" />

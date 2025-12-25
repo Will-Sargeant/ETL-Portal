@@ -128,7 +128,7 @@ export function JobsList({ onViewJob }: JobsListProps) {
                           STATUS_COLORS[job.status]
                         }`}
                       >
-                        {job.status}
+                        {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
                       </span>
                     </div>
 
