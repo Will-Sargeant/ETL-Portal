@@ -7,6 +7,7 @@ from enum import Enum
 class JobStatus(str, Enum):
     """ETL Job status enumeration."""
     DRAFT = "draft"
+    LIVE = "live"
     ACTIVE = "active"
     SCHEDULED = "scheduled"
     RUNNING = "running"
@@ -172,6 +173,7 @@ class ETLJobResponse(BaseModel):
     transformation_rules: Optional[Dict[str, Any]]
     batch_size: int
     status: JobStatus
+    is_paused: bool = False
     created_at: datetime
     updated_at: datetime
     column_mappings: List[ColumnMappingResponse] = []
@@ -188,8 +190,10 @@ class ETLJobListResponse(BaseModel):
     source_type: SourceType
     destination_type: DestinationType
     status: JobStatus
+    is_paused: bool = False
     created_at: datetime
     updated_at: datetime
+    last_executed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

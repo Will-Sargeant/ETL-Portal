@@ -1,5 +1,6 @@
 export type JobStatus =
   | 'draft'
+  | 'live'
   | 'active'
   | 'scheduled'
   | 'running'
@@ -78,6 +79,7 @@ export interface ETLJob {
   transformation_rules?: Record<string, any>
   batch_size: number
   status: JobStatus
+  is_paused: boolean
   created_at: string
   updated_at: string
   column_mappings: ColumnMapping[]
@@ -90,6 +92,8 @@ export interface ETLJobListItem {
   source_type: SourceType
   destination_type: DestinationType
   status: JobStatus
+  is_paused: boolean
   created_at: string
   updated_at: string
+  last_executed_at?: string
 }

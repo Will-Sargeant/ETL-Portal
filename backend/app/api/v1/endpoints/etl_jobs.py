@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -201,6 +201,7 @@ async def update_mappings(
 @router.post("/execute/{job_id}", response_model=JobRunResponse, status_code=status.HTTP_201_CREATED)
 async def execute_job(
     job_id: int,
+    trigger_source: str = Query(default="manual", regex="^(manual|scheduled)$"),
     db: AsyncSession = Depends(get_db)
 ):
     """Execute an ETL job immediately via Airflow."""
@@ -214,12 +215,19 @@ async def execute_job(
             detail="ETL job not found"
         )
 
+    # Check if job is paused
+    if db_job.is_paused:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job is paused. Resume the job before executing."
+        )
+
     # Create job run record
     job_run = JobRun(
         job_id=job_id,
         status=RunStatus.PENDING,
         started_at=datetime.utcnow(),
-        triggered_by="manual",
+        triggered_by=trigger_source,
         message="Job execution initiated"
     )
 
@@ -257,3 +265,99 @@ async def execute_job(
         )
 
     return job_run
+
+
+@router.post("/{job_id}/pause", response_model=ETLJobResponse)
+async def pause_job(
+    job_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Pause a job - blocks all execution (manual and scheduled).
+    If the job has an active schedule, it will be disabled and the Airflow DAG will be paused.
+    """
+    from app.services.airflow_client import airflow_client
+    from app.models.schedule import Schedule
+    from sqlalchemy import select
+
+    # Get job
+    db_job = await crud.get_etl_job(db, job_id)
+    if not db_job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ETL job not found"
+        )
+
+    # Set is_paused flag
+    db_job.is_paused = True
+
+    # Get and disable any schedules
+    result = await db.execute(
+        select(Schedule).where(Schedule.job_id == job_id)
+    )
+    schedule = result.scalar_one_or_none()
+
+    if schedule:
+        schedule.enabled = False
+
+        # Pause the Airflow DAG if it exists
+        if schedule.airflow_dag_id:
+            try:
+                await airflow_client.pause_dag(schedule.airflow_dag_id)
+            except Exception as e:
+                # Log error but don't fail the pause operation
+                import logging
+                logging.error(f"Failed to pause Airflow DAG {schedule.airflow_dag_id}: {e}")
+
+    await db.commit()
+    await db.refresh(db_job)
+
+    return db_job
+
+
+@router.post("/{job_id}/resume", response_model=ETLJobResponse)
+async def resume_job(
+    job_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Resume a paused job.
+    If the job has a schedule, it will be re-enabled and the Airflow DAG will be unpaused.
+    """
+    from app.services.airflow_client import airflow_client
+    from app.models.schedule import Schedule
+    from sqlalchemy import select
+
+    # Get job
+    db_job = await crud.get_etl_job(db, job_id)
+    if not db_job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ETL job not found"
+        )
+
+    # Clear is_paused flag
+    db_job.is_paused = False
+
+    # Get and re-enable schedules
+    result = await db.execute(
+        select(Schedule).where(Schedule.job_id == job_id)
+    )
+    schedule = result.scalar_one_or_none()
+
+    if schedule:
+        schedule.enabled = True
+
+        # Unpause the Airflow DAG if it exists
+        if schedule.airflow_dag_id:
+            try:
+                await airflow_client.unpause_dag(schedule.airflow_dag_id)
+            except Exception as e:
+                # Log error but don't fail the resume operation
+                import logging
+                logging.error(f"Failed to unpause Airflow DAG {schedule.airflow_dag_id}: {e}")
+
+    await db.commit()
+    await db.refresh(db_job)
+
+    return db_job

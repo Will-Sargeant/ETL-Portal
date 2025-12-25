@@ -80,7 +80,7 @@ dag = DAG(
 execute_job = SimpleHttpOperator(
     task_id='execute_etl_job_{job.id}',
     http_conn_id='etl_portal_api',
-    endpoint='/api/v1/jobs/execute/{job.id}',
+    endpoint='/api/v1/jobs/execute/{job.id}?trigger_source=scheduled',
     method='POST',
     headers={{'Content-Type': 'application/json'}},
     response_check=lambda response: response.status_code == 201,

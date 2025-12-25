@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import {
   ArrowLeft,
   Play,
+  Pause,
   Calendar,
   Trash2,
   Settings,
@@ -66,10 +67,44 @@ export function JobDetailsPage() {
     },
   })
 
+  const pauseMutation = useMutation({
+    mutationFn: () => etlJobsApi.pause(Number(jobId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etl-job', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
+      toast.success('Job paused successfully')
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.detail || 'Failed to pause job'
+      toast.error(message)
+    },
+  })
+
+  const resumeMutation = useMutation({
+    mutationFn: () => etlJobsApi.resume(Number(jobId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etl-job', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
+      toast.success('Job resumed successfully')
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.detail || 'Failed to resume job'
+      toast.error(message)
+    },
+  })
+
   const handleExecute = () => {
     if (confirm('Are you sure you want to execute this job?')) {
       executeMutation.mutate()
     }
+  }
+
+  const handlePause = () => {
+    pauseMutation.mutate()
+  }
+
+  const handleResume = () => {
+    resumeMutation.mutate()
   }
 
   const handleDelete = () => {
@@ -136,13 +171,34 @@ export function JobDetailsPage() {
                   <Edit className="w-4 h-4 mr-2" />
                   Edit Job
                 </Button>
-                <Button
-                  onClick={handleExecute}
-                  disabled={executeMutation.isPending}
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  Execute Now
-                </Button>
+                {job.is_paused ? (
+                  <Button
+                    variant="outline"
+                    onClick={handleResume}
+                    disabled={resumeMutation.isPending}
+                  >
+                    <Play className="w-4 h-4 mr-2" />
+                    Resume Job
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      onClick={handleExecute}
+                      disabled={executeMutation.isPending}
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Execute Now
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handlePause}
+                      disabled={pauseMutation.isPending}
+                    >
+                      <Pause className="w-4 h-4 mr-2" />
+                      Pause Job
+                    </Button>
+                  </>
+                )}
                 <Button
                   variant="destructive"
                   onClick={handleDelete}
@@ -176,7 +232,15 @@ export function JobDetailsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Status</p>
-                  <Badge>{job.status}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge>{job.status}</Badge>
+                    {job.is_paused && (
+                      <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                        <Pause className="w-3 h-3 mr-1" />
+                        Paused
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Source Type</p>

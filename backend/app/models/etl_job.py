@@ -9,6 +9,7 @@ from app.core.database import Base
 class JobStatus(str, enum.Enum):
     """ETL Job status enumeration."""
     DRAFT = "draft"
+    LIVE = "live"
     ACTIVE = "active"
     SCHEDULED = "scheduled"
     RUNNING = "running"
@@ -62,6 +63,7 @@ class ETLJob(Base):
 
     # Status
     status = Column(Enum(JobStatus), default=JobStatus.DRAFT, index=True)
+    is_paused = Column(Boolean, default=False, nullable=False, index=True)
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

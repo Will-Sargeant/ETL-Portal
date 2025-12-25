@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { FileText, Database, Trash2, Play, Pause, Clock } from 'lucide-react'
+import { FileText, Database, Trash2, Clock, Play, Pause } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import { Button } from '@/components/ui/button'
@@ -14,12 +14,13 @@ interface JobsListProps {
 
 const STATUS_COLORS: Record<JobStatus, string> = {
   draft: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
-  active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  live: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  active: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   running: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
   completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  paused: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+  paused: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
 }
 
 export function JobsList({ onViewJob }: JobsListProps) {
@@ -38,6 +39,30 @@ export function JobsList({ onViewJob }: JobsListProps) {
     },
     onError: (error: any) => {
       const message = error.response?.data?.detail || 'Failed to delete ETL job'
+      toast.error(message)
+    },
+  })
+
+  const pauseMutation = useMutation({
+    mutationFn: (id: number) => etlJobsApi.pause(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
+      toast.success('Job paused successfully')
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.detail || 'Failed to pause job'
+      toast.error(message)
+    },
+  })
+
+  const resumeMutation = useMutation({
+    mutationFn: (id: number) => etlJobsApi.resume(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
+      toast.success('Job resumed successfully')
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.detail || 'Failed to resume job'
       toast.error(message)
     },
   })
@@ -124,22 +149,36 @@ export function JobsList({ onViewJob }: JobsListProps) {
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
+                        {job.last_executed_at
+                          ? `Last run ${formatDistanceToNow(new Date(job.last_executed_at), { addSuffix: true })}`
+                          : 'Never run'}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex gap-1 flex-shrink-0">
-                  {job.status === 'draft' || job.status === 'paused' ? (
-                    <Button variant="ghost" size="icon" title="Activate job" disabled>
+                  {job.is_paused ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => resumeMutation.mutate(job.id)}
+                      disabled={resumeMutation.isPending}
+                      title="Resume job"
+                    >
                       <Play className="w-4 h-4 text-green-600" />
                     </Button>
-                  ) : job.status === 'active' ? (
-                    <Button variant="ghost" size="icon" title="Pause job" disabled>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => pauseMutation.mutate(job.id)}
+                      disabled={pauseMutation.isPending}
+                      title="Pause job"
+                    >
                       <Pause className="w-4 h-4" />
                     </Button>
-                  ) : null}
+                  )}
 
                   {onViewJob && (
                     <Button

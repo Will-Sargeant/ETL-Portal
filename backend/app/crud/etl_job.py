@@ -1,11 +1,12 @@
 from typing import Optional, List
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.etl_job import ETLJob
 from app.models.column_mapping import ColumnMapping
 from app.models.schedule import Schedule
+from app.models.job_run import JobRun
 from app.schemas.etl_job import ETLJobCreate, ETLJobUpdate, ColumnMappingCreate
 
 
@@ -155,14 +156,84 @@ async def get_etl_jobs(
     limit: int = 100,
     status: Optional[str] = None
 ) -> List[ETLJob]:
-    """Get all ETL jobs."""
-    query = select(ETLJob).offset(skip).limit(limit).order_by(ETLJob.created_at.desc())
+    """Get all ETL jobs with last execution date and computed status."""
+    from app.models.schedule import Schedule
+
+    # Subquery to get the latest started_at for each job
+    latest_run_subquery = (
+        select(
+            JobRun.job_id,
+            func.max(JobRun.started_at).label('last_executed_at')
+        )
+        .group_by(JobRun.job_id)
+        .subquery()
+    )
+
+    # Subquery to count job runs for each job
+    run_count_subquery = (
+        select(
+            JobRun.job_id,
+            func.count(JobRun.id).label('run_count')
+        )
+        .group_by(JobRun.job_id)
+        .subquery()
+    )
+
+    # Subquery to check for active schedules
+    active_schedule_subquery = (
+        select(
+            Schedule.job_id,
+            func.count(Schedule.id).label('active_schedule_count')
+        )
+        .where(Schedule.enabled == True)
+        .group_by(Schedule.job_id)
+        .subquery()
+    )
+
+    # Main query with left joins
+    query = (
+        select(
+            ETLJob,
+            latest_run_subquery.c.last_executed_at,
+            func.coalesce(run_count_subquery.c.run_count, 0).label('run_count'),
+            func.coalesce(active_schedule_subquery.c.active_schedule_count, 0).label('active_schedule_count')
+        )
+        .outerjoin(latest_run_subquery, ETLJob.id == latest_run_subquery.c.job_id)
+        .outerjoin(run_count_subquery, ETLJob.id == run_count_subquery.c.job_id)
+        .outerjoin(active_schedule_subquery, ETLJob.id == active_schedule_subquery.c.job_id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(ETLJob.created_at.desc())
+    )
 
     if status:
         query = query.where(ETLJob.status == status)
 
     result = await db.execute(query)
-    return list(result.scalars().all())
+
+    # Attach last_executed_at and compute status for each job
+    # We need to detach from session to avoid triggering updates
+    jobs = []
+    for job, last_executed_at, run_count, active_schedule_count in result:
+        # Detach the job from the session so we can modify it without updating DB
+        db.expunge(job)
+
+        job.last_executed_at = last_executed_at
+
+        # Compute status based on rules:
+        # - paused if is_paused is True
+        # - live if has active schedule OR has been run at least once
+        # - draft otherwise
+        if job.is_paused:
+            job.status = "paused"
+        elif active_schedule_count > 0 or run_count > 0:
+            job.status = "live"
+        else:
+            job.status = "draft"
+
+        jobs.append(job)
+
+    return jobs
 
 
 async def update_etl_job(
