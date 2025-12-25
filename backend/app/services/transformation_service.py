@@ -15,16 +15,167 @@ logger = structlog.get_logger()
 class TransformationService:
     """Service for applying data transformations to pandas Series/DataFrames."""
 
-    # Predefined transformations using lambda functions on pandas Series
-    TRANSFORMATIONS: Dict[str, Any] = {
-        'UPPER': lambda x: x.str.upper() if x.dtype == 'object' else x,
-        'LOWER': lambda x: x.str.lower() if x.dtype == 'object' else x,
-        'TRIM': lambda x: x.str.strip() if x.dtype == 'object' else x,
-        'LTRIM': lambda x: x.str.lstrip() if x.dtype == 'object' else x,
-        'RTRIM': lambda x: x.str.rstrip() if x.dtype == 'object' else x,
-        'REMOVE_SPACES': lambda x: x.str.replace(' ', '') if x.dtype == 'object' else x,
-        'CAPITALIZE': lambda x: x.str.capitalize() if x.dtype == 'object' else x,
-        'TITLE': lambda x: x.str.title() if x.dtype == 'object' else x,
+    # Predefined transformations with metadata
+    TRANSFORMATIONS: Dict[str, Dict[str, Any]] = {
+        # String Transformations
+        'UPPER': {
+            'func': lambda x: x.str.upper() if x.dtype == 'object' else x,
+            'description': 'Convert text to UPPERCASE',
+            'category': 'string',
+            'params': []
+        },
+        'LOWER': {
+            'func': lambda x: x.str.lower() if x.dtype == 'object' else x,
+            'description': 'Convert text to lowercase',
+            'category': 'string',
+            'params': []
+        },
+        'TRIM': {
+            'func': lambda x: x.str.strip() if x.dtype == 'object' else x,
+            'description': 'Remove leading and trailing whitespace',
+            'category': 'string',
+            'params': []
+        },
+        'LTRIM': {
+            'func': lambda x: x.str.lstrip() if x.dtype == 'object' else x,
+            'description': 'Remove leading whitespace',
+            'category': 'string',
+            'params': []
+        },
+        'RTRIM': {
+            'func': lambda x: x.str.rstrip() if x.dtype == 'object' else x,
+            'description': 'Remove trailing whitespace',
+            'category': 'string',
+            'params': []
+        },
+        'REMOVE_SPACES': {
+            'func': lambda x: x.str.replace(' ', '', regex=False) if x.dtype == 'object' else x,
+            'description': 'Remove all spaces from text',
+            'category': 'string',
+            'params': []
+        },
+        'CAPITALIZE': {
+            'func': lambda x: x.str.capitalize() if x.dtype == 'object' else x,
+            'description': 'Capitalize first letter of each value',
+            'category': 'string',
+            'params': []
+        },
+        'TITLE': {
+            'func': lambda x: x.str.title() if x.dtype == 'object' else x,
+            'description': 'Convert To Title Case',
+            'category': 'string',
+            'params': []
+        },
+        'REVERSE': {
+            'func': lambda x: x.str[::-1] if x.dtype == 'object' else x,
+            'description': 'Reverse text',
+            'category': 'string',
+            'params': []
+        },
+        'LENGTH': {
+            'func': lambda x: x.str.len() if x.dtype == 'object' else x,
+            'description': 'Get length of text',
+            'category': 'string',
+            'params': []
+        },
+
+        # Date/Time Transformations
+        'EXTRACT_YEAR': {
+            'func': lambda x: pd.to_datetime(x, errors='coerce').dt.year,
+            'description': 'Extract year from date (e.g., 2024)',
+            'category': 'date',
+            'params': []
+        },
+        'EXTRACT_MONTH': {
+            'func': lambda x: pd.to_datetime(x, errors='coerce').dt.month,
+            'description': 'Extract month number (1-12)',
+            'category': 'date',
+            'params': []
+        },
+        'EXTRACT_DAY': {
+            'func': lambda x: pd.to_datetime(x, errors='coerce').dt.day,
+            'description': 'Extract day of month (1-31)',
+            'category': 'date',
+            'params': []
+        },
+        'TODAY': {
+            'func': lambda x: pd.Timestamp.today(),
+            'description': 'Replace with current date',
+            'category': 'date',
+            'params': []
+        },
+        'NOW': {
+            'func': lambda x: pd.Timestamp.now(),
+            'description': 'Replace with current date and time',
+            'category': 'date',
+            'params': []
+        },
+
+        # Numeric Transformations
+        'ABS': {
+            'func': lambda x: x.abs() if pd.api.types.is_numeric_dtype(x) else x,
+            'description': 'Get absolute value',
+            'category': 'numeric',
+            'params': []
+        },
+        'FLOOR': {
+            'func': lambda x: x.apply(lambda val: int(val) if pd.notna(val) else val) if pd.api.types.is_numeric_dtype(x) else x,
+            'description': 'Round down to nearest integer',
+            'category': 'numeric',
+            'params': []
+        },
+        'CEILING': {
+            'func': lambda x: x.apply(lambda val: int(val) + (1 if val > int(val) else 0) if pd.notna(val) else val) if pd.api.types.is_numeric_dtype(x) else x,
+            'description': 'Round up to nearest integer',
+            'category': 'numeric',
+            'params': []
+        },
+
+        # Type Conversions
+        'TO_STRING': {
+            'func': lambda x: x.astype(str),
+            'description': 'Convert to text',
+            'category': 'conversion',
+            'params': []
+        },
+        'TO_INT': {
+            'func': lambda x: pd.to_numeric(x, errors='coerce').astype('Int64'),
+            'description': 'Convert to integer',
+            'category': 'conversion',
+            'params': []
+        },
+        'TO_FLOAT': {
+            'func': lambda x: pd.to_numeric(x, errors='coerce'),
+            'description': 'Convert to decimal number',
+            'category': 'conversion',
+            'params': []
+        },
+        'TO_DATE': {
+            'func': lambda x: pd.to_datetime(x, errors='coerce'),
+            'description': 'Convert to date/time',
+            'category': 'conversion',
+            'params': []
+        },
+        'TO_BOOLEAN': {
+            'func': lambda x: x.astype(bool),
+            'description': 'Convert to true/false',
+            'category': 'conversion',
+            'params': []
+        },
+
+        # Null Handling
+        'FILL_NULL': {
+            'func': lambda x: x.fillna(''),
+            'description': 'Replace null values with empty string',
+            'category': 'null_handling',
+            'params': []
+        },
+        'FILL_ZERO': {
+            'func': lambda x: x.fillna(0),
+            'description': 'Replace null values with zero',
+            'category': 'null_handling',
+            'params': []
+        },
     }
 
     def apply_transformation(
@@ -55,7 +206,8 @@ class TransformationService:
             )
 
         try:
-            transform_func = self.TRANSFORMATIONS[transformation]
+            transform_config = self.TRANSFORMATIONS[transformation]
+            transform_func = transform_config['func']
             result = transform_func(series)
 
             logger.info(

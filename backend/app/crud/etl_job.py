@@ -141,13 +141,44 @@ async def get_etl_job(
     db: AsyncSession,
     job_id: int
 ) -> Optional[ETLJob]:
-    """Get an ETL job by ID with column mappings."""
+    """Get an ETL job by ID with column mappings and computed status."""
     result = await db.execute(
         select(ETLJob)
         .where(ETLJob.id == job_id)
         .options(selectinload(ETLJob.column_mappings))
     )
-    return result.scalar_one_or_none()
+    job = result.scalar_one_or_none()
+
+    if not job:
+        return None
+
+    # Compute status same as in get_etl_jobs
+    # Count job runs
+    run_count_result = await db.execute(
+        select(func.count(JobRun.id))
+        .where(JobRun.job_id == job_id)
+    )
+    run_count = run_count_result.scalar() or 0
+
+    # Count active schedules
+    active_schedule_result = await db.execute(
+        select(func.count(Schedule.id))
+        .where(Schedule.job_id == job_id, Schedule.enabled == True)
+    )
+    active_schedule_count = active_schedule_result.scalar() or 0
+
+    # Detach from session to avoid triggering updates
+    db.expunge(job)
+
+    # Compute status
+    if job.is_paused:
+        job.status = "paused"
+    elif active_schedule_count > 0 or run_count > 0:
+        job.status = "live"
+    else:
+        job.status = "draft"
+
+    return job
 
 
 async def get_etl_jobs(

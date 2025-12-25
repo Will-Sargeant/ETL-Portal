@@ -41,7 +41,8 @@ export interface ColumnMappingConfig {
   destinationColumn: string | null
   sourceType: string
   destinationType: string | null
-  transformation?: string
+  transformation?: string  // Deprecated: single transformation
+  transformations?: string[]  // Array of transformations to apply in order
   isNullable: boolean
   defaultValue?: string
   exclude?: boolean

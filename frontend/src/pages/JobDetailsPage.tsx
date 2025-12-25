@@ -27,6 +27,7 @@ import { ScheduleManager } from '@/features/etl-jobs/ScheduleManager'
 import { JobEditor } from '@/features/etl-jobs/JobEditor'
 import { CSVPreviewTab } from '@/features/etl-jobs/CSVPreviewTab'
 import { ColumnMappingsEditor } from '@/features/etl-jobs/ColumnMappingsEditor'
+import type { JobStatus } from '@/types/etl-job'
 
 export function JobDetailsPage() {
   const { jobId } = useParams<{ jobId: string }>()
@@ -39,6 +40,17 @@ export function JobDetailsPage() {
     queryFn: () => etlJobsApi.get(Number(jobId)),
     enabled: !!jobId,
   })
+
+  const STATUS_COLORS: Record<JobStatus, string> = {
+    draft: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+    live: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    active: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    running: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    paused: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  }
 
   const executeMutation = useMutation({
     mutationFn: () => etlJobsApi.execute(Number(jobId)),
@@ -233,7 +245,7 @@ export function JobDetailsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Status</p>
                   <div className="flex items-center gap-2">
-                    <Badge>{job.status}</Badge>
+                    <Badge className={STATUS_COLORS[job.status]}>{job.status}</Badge>
                     {job.is_paused && (
                       <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
                         <Pause className="w-3 h-3 mr-1" />

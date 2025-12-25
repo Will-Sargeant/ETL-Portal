@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Edit2, Save, X, Trash2, Plus, ArrowRight, CheckCircle2, XCircle } from 'lucide-react'
+import { Edit2, Save, X, Trash2, ArrowRight, CheckCircle2, XCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,20 +16,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { etlJobsApi } from '@/lib/api/etl-jobs'
+import { transformationsApi } from '@/lib/api/transformations'
 import type { ETLJob, ColumnMapping } from '@/types/etl-job'
 
 interface ColumnMappingsEditorProps {
   job: ETLJob
 }
-
-const TRANSFORMATIONS = [
-  { value: 'UPPER', label: 'UPPER - Convert to uppercase' },
-  { value: 'LOWER', label: 'LOWER - Convert to lowercase' },
-  { value: 'TRIM', label: 'TRIM - Remove whitespace' },
-  { value: 'LTRIM', label: 'LTRIM - Remove leading whitespace' },
-  { value: 'RTRIM', label: 'RTRIM - Remove trailing whitespace' },
-]
 
 const DATA_TYPES = [
   'text',
@@ -49,6 +43,12 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editedMapping, setEditedMapping] = useState<ColumnMapping | null>(null)
+
+  // Fetch transformations from API
+  const { data: transformationsByCategory, isLoading: isLoadingTransformations } = useQuery({
+    queryKey: ['transformations', 'categories'],
+    queryFn: transformationsApi.getByCategory,
+  })
 
   const updateMutation = useMutation({
     mutationFn: async (mappings: ColumnMapping[]) => {
@@ -203,44 +203,67 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
                       </div>
                     </div>
 
-                    {/* Transformations (Multi-select) */}
+                    {/* Transformations (Multi-select with Categories) */}
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground">
                         Transformations (applied in order)
                       </Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 border rounded-lg">
-                        {TRANSFORMATIONS.map((t) => {
-                          const isSelected = currentMapping.transformations?.includes(t.value) || false
-                          return (
-                            <div key={t.value} className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`transform-${mapping.id}-${t.value}`}
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  const current = currentMapping.transformations || []
-                                  if (e.target.checked) {
-                                    updateField('transformations', [...current, t.value])
-                                  } else {
-                                    updateField('transformations', current.filter(v => v !== t.value))
-                                  }
-                                }}
-                                className="h-4 w-4 rounded border-gray-300"
-                              />
-                              <Label
-                                htmlFor={`transform-${mapping.id}-${t.value}`}
-                                className="text-sm font-normal cursor-pointer"
-                              >
-                                {t.value}
-                              </Label>
+                      {isLoadingTransformations ? (
+                        <div className="p-3 border rounded-lg text-sm text-muted-foreground">
+                          Loading transformations...
+                        </div>
+                      ) : transformationsByCategory ? (
+                        <div className="max-h-80 overflow-y-auto border rounded-lg p-3 space-y-3">
+                          {Object.entries(transformationsByCategory).map(([category, transformations]) => (
+                            <div key={category} className="space-y-2">
+                              <h4 className="font-medium text-sm capitalize">{category}</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-2">
+                                {transformations.map((t) => {
+                                  const isSelected = currentMapping.transformations?.includes(t.name) || false
+                                  return (
+                                    <div key={t.name} className="flex items-start space-x-2">
+                                      <Checkbox
+                                        id={`transform-${mapping.id}-${t.name}`}
+                                        checked={isSelected}
+                                        onCheckedChange={(checked) => {
+                                          const current = currentMapping.transformations || []
+                                          if (checked) {
+                                            updateField('transformations', [...current, t.name])
+                                          } else {
+                                            updateField('transformations', current.filter(v => v !== t.name))
+                                          }
+                                        }}
+                                      />
+                                      <div className="flex-1">
+                                        <Label
+                                          htmlFor={`transform-${mapping.id}-${t.name}`}
+                                          className="text-sm font-normal cursor-pointer"
+                                        >
+                                          {t.name}
+                                        </Label>
+                                        <p className="text-xs text-muted-foreground">{t.description}</p>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
                             </div>
-                          )
-                        })}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-3 border rounded-lg text-sm text-muted-foreground">
+                          No transformations available
+                        </div>
+                      )}
                       {currentMapping.transformations && currentMapping.transformations.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          Order: {currentMapping.transformations.join(' → ')}
-                        </p>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground">Applied in order:</span>
+                          {currentMapping.transformations.map((t, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs">
+                              {idx + 1}. {t}
+                            </Badge>
+                          ))}
+                        </div>
                       )}
                     </div>
 

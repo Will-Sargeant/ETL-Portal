@@ -209,25 +209,18 @@ export function ColumnMappingStep({ data, onChange }: ColumnMappingStepProps) {
               </div>
 
               {/* Optional fields */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label className="text-xs">Transformation (Optional)</Label>
-                  <Input
-                    placeholder="UPPER, LOWER, TRIM..."
-                    value={mapping.transformation || ''}
-                    onChange={(e) => updateMapping(index, { transformation: e.target.value })}
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Default Value (Optional)</Label>
-                  <Input
-                    placeholder="Default if null"
-                    value={mapping.default_value || ''}
-                    onChange={(e) => updateMapping(index, { default_value: e.target.value })}
-                    className="h-9"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Default Value (Optional)</Label>
+                <Input
+                  placeholder="Default if null"
+                  value={mapping.default_value || ''}
+                  onChange={(e) => updateMapping(index, { default_value: e.target.value })}
+                  className="h-9"
+                />
+              </div>
+
+              <div className="text-xs text-muted-foreground italic">
+                Note: Configure transformations after creating the job in the job details page
               </div>
             </div>
           </Card>

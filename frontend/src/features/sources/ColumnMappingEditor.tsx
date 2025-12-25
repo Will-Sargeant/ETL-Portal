@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { GripVertical, Trash2, ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { GripVertical, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +13,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
 import { CalculatedColumnBuilder } from './CalculatedColumnBuilder'
+import { transformationsApi } from '@/lib/api/transformations'
 import type { ColumnMappingConfig } from '@/types/source'
 import type { ColumnInfo } from '@/types/source'
 import type { TableSchema } from '@/types/destination'
@@ -37,15 +40,6 @@ const SQL_TYPES = [
   'JSON',
 ]
 
-const TRANSFORMATIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'UPPER', label: 'UPPER' },
-  { value: 'LOWER', label: 'LOWER' },
-  { value: 'TRIM', label: 'TRIM' },
-  { value: 'LTRIM', label: 'LTRIM' },
-  { value: 'RTRIM', label: 'RTRIM' },
-]
-
 export function ColumnMappingEditor({
   sourceColumns,
   tableSchema,
@@ -54,6 +48,12 @@ export function ColumnMappingEditor({
 }: ColumnMappingEditorProps) {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [showCalculatedBuilder, setShowCalculatedBuilder] = useState(false)
+
+  // Fetch transformations from API
+  const { data: transformationsByCategory, isLoading: isLoadingTransformations } = useQuery({
+    queryKey: ['transformations', 'categories'],
+    queryFn: transformationsApi.getByCategory,
+  })
 
   const toggleRow = (index: number) => {
     const newExpanded = new Set(expandedRows)
@@ -373,43 +373,84 @@ export function ColumnMappingEditor({
               {/* Expanded Details */}
               {isExpanded && !mapping.exclude && (
                 <div className="p-4 bg-muted/10 border-t space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-xs">Transformation</Label>
-                      <Select
-                        value={mapping.transformation || 'none'}
-                        onValueChange={(value) =>
-                          updateMapping(index, {
-                            transformation: value === 'none' ? undefined : value,
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TRANSFORMATIONS.map((tf) => (
-                            <SelectItem key={tf.value} value={tf.value}>
-                              {tf.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  {/* Transformations (Multi-select with Categories) */}
+                  <div className="space-y-2">
+                    <Label className="text-xs">Transformations (applied in order)</Label>
+                    {isLoadingTransformations ? (
+                      <div className="p-3 border rounded-lg text-sm text-muted-foreground">
+                        Loading transformations...
+                      </div>
+                    ) : transformationsByCategory ? (
+                      <div className="max-h-60 overflow-y-auto border rounded-lg p-3 space-y-3">
+                        {Object.entries(transformationsByCategory).map(([category, transformations]) => (
+                          <div key={category} className="space-y-2">
+                            <h4 className="font-medium text-xs capitalize">{category}</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-2">
+                              {transformations.map((t) => {
+                                const currentTransformations = mapping.transformations || []
+                                const isSelected = currentTransformations.includes(t.name)
+                                return (
+                                  <div key={t.name} className="flex items-start space-x-2">
+                                    <Checkbox
+                                      id={`transform-${index}-${t.name}`}
+                                      checked={isSelected}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          updateMapping(index, {
+                                            transformations: [...currentTransformations, t.name],
+                                          })
+                                        } else {
+                                          updateMapping(index, {
+                                            transformations: currentTransformations.filter(v => v !== t.name),
+                                          })
+                                        }
+                                      }}
+                                    />
+                                    <div className="flex-1">
+                                      <Label
+                                        htmlFor={`transform-${index}-${t.name}`}
+                                        className="text-xs font-normal cursor-pointer"
+                                      >
+                                        {t.name}
+                                      </Label>
+                                      <p className="text-xs text-muted-foreground">{t.description}</p>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 border rounded-lg text-sm text-muted-foreground">
+                        No transformations available
+                      </div>
+                    )}
+                    {mapping.transformations && mapping.transformations.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-muted-foreground">Applied in order:</span>
+                        {mapping.transformations.map((t, idx) => (
+                          <Badge key={idx} variant="secondary" className="text-xs">
+                            {idx + 1}. {t}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-                    <div className="space-y-2">
-                      <Label className="text-xs">Default Value</Label>
-                      <Input
-                        value={mapping.defaultValue || ''}
-                        onChange={(e) =>
-                          updateMapping(index, {
-                            defaultValue: e.target.value || undefined,
-                          })
-                        }
-                        placeholder="NULL"
-                        className="h-8"
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Default Value</Label>
+                    <Input
+                      value={mapping.defaultValue || ''}
+                      onChange={(e) =>
+                        updateMapping(index, {
+                          defaultValue: e.target.value || undefined,
+                        })
+                      }
+                      placeholder="NULL"
+                      className="h-8"
+                    />
                   </div>
 
                   <div className="flex items-center gap-4">
