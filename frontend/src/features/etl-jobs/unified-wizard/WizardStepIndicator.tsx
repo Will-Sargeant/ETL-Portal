@@ -21,8 +21,8 @@ export function WizardStepIndicator({
   onStepClick,
 }: WizardStepIndicatorProps) {
   return (
-    <nav aria-label="Progress">
-      <ol role="list" className="flex items-center">
+    <nav aria-label="Progress" className="px-4 py-6">
+      <ol role="list" className="flex items-start gap-0">
         {steps.map((step, stepIdx) => {
           const isCompleted = completedSteps.has(step.id)
           const isCurrent = currentStep === step.id
@@ -32,81 +32,79 @@ export function WizardStepIndicator({
             <li
               key={step.id}
               className={cn(
-                'relative',
-                stepIdx !== steps.length - 1 ? 'pr-8 sm:pr-20 flex-1' : ''
+                'flex items-center',
+                stepIdx === 0 ? 'flex-[0_0_auto]' : 'flex-1'
               )}
             >
-              {/* Connector line */}
-              {stepIdx !== steps.length - 1 && (
+              {/* Connector line before step (except first) */}
+              {stepIdx !== 0 && (
                 <div
-                  className="absolute inset-0 flex items-center"
+                  className="flex-1 h-0.5 mx-2"
                   aria-hidden="true"
                 >
                   <div
                     className={cn(
-                      'h-0.5 w-full',
-                      isCompleted ? 'bg-primary' : 'bg-gray-200'
+                      'h-full w-full transition-colors',
+                      completedSteps.has(steps[stepIdx - 1].id) ? 'bg-primary' : 'bg-muted-foreground/20'
                     )}
                   />
                 </div>
               )}
 
-              {/* Step indicator */}
-              <button
-                type="button"
-                onClick={() => canNavigate && onStepClick(step.id)}
-                disabled={!canNavigate}
-                className={cn(
-                  'relative flex flex-col items-center group',
-                  canNavigate ? 'cursor-pointer' : 'cursor-not-allowed'
-                )}
-              >
-                {/* Circle with number or checkmark */}
-                <span
+              {/* Step indicator button */}
+              <div className="flex flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => canNavigate && onStepClick(step.id)}
+                  disabled={!canNavigate}
                   className={cn(
-                    'h-10 w-10 flex items-center justify-center rounded-full border-2 transition-colors',
-                    isCompleted && 'bg-primary border-primary',
-                    isCurrent &&
-                      !isCompleted &&
-                      'border-primary bg-background',
-                    !isCurrent &&
-                      !isCompleted &&
-                      'border-gray-300 bg-background',
-                    canNavigate && 'group-hover:border-primary/60'
+                    'flex flex-col items-center group transition-all',
+                    canNavigate ? 'cursor-pointer' : 'cursor-not-allowed'
                   )}
                 >
-                  {isCompleted ? (
-                    <Check className="h-5 w-5 text-white" />
-                  ) : (
-                    <span
-                      className={cn(
-                        'text-sm font-medium',
-                        isCurrent && 'text-primary',
-                        !isCurrent && 'text-gray-500'
-                      )}
-                    >
-                      {step.id + 1}
-                    </span>
-                  )}
-                </span>
-
-                {/* Step title and description */}
-                <div className="mt-2 text-center">
+                  {/* Circle with number or checkmark */}
                   <span
                     className={cn(
-                      'text-sm font-medium block',
-                      isCurrent && 'text-primary',
-                      isCompleted && 'text-foreground',
-                      !isCurrent && !isCompleted && 'text-gray-500'
+                      'h-12 w-12 flex items-center justify-center rounded-full border-2 transition-all shadow-sm',
+                      isCompleted && 'bg-primary border-primary shadow-md',
+                      isCurrent && !isCompleted && 'border-primary bg-primary/10 ring-4 ring-primary/20',
+                      !isCurrent && !isCompleted && 'border-muted-foreground/30 bg-background',
+                      canNavigate && 'group-hover:border-primary/80 group-hover:shadow-md'
                     )}
                   >
-                    {step.title}
+                    {isCompleted ? (
+                      <Check className="h-6 w-6 text-white" />
+                    ) : (
+                      <span
+                        className={cn(
+                          'text-base font-semibold',
+                          isCurrent && 'text-primary',
+                          !isCurrent && 'text-muted-foreground'
+                        )}
+                      >
+                        {step.id + 1}
+                      </span>
+                    )}
                   </span>
-                  <span className="text-xs text-muted-foreground hidden sm:block mt-1">
-                    {step.description}
-                  </span>
-                </div>
-              </button>
+
+                  {/* Step title and description */}
+                  <div className="mt-3 text-center max-w-[140px]">
+                    <span
+                      className={cn(
+                        'text-sm font-medium block leading-tight',
+                        isCurrent && 'text-primary',
+                        isCompleted && 'text-foreground',
+                        !isCurrent && !isCompleted && 'text-muted-foreground'
+                      )}
+                    >
+                      {step.title}
+                    </span>
+                    <span className="text-xs text-muted-foreground hidden md:block mt-1 leading-tight">
+                      {step.description}
+                    </span>
+                  </div>
+                </button>
+              </div>
             </li>
           )
         })}

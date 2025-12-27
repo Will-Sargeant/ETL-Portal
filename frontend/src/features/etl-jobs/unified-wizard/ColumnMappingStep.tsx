@@ -84,7 +84,6 @@ export function ColumnMappingStep({ state, onUpdate }: ColumnMappingStepProps) {
       case 'insert':
         return {
           allowed: [
-            'Add calculated columns',
             'Exclude optional columns',
             'Apply transformations',
           ],
@@ -98,7 +97,6 @@ export function ColumnMappingStep({ state, onUpdate }: ColumnMappingStepProps) {
             'Apply transformations',
           ],
           disallowed: [
-            'Add calculated columns',
             'Exclude columns',
             'Edit column names',
           ],
@@ -110,7 +108,6 @@ export function ColumnMappingStep({ state, onUpdate }: ColumnMappingStepProps) {
         return {
           allowed: [
             'Edit column names',
-            'Add calculated columns',
             'Exclude optional columns',
             'Apply transformations',
           ],
