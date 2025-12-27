@@ -55,8 +55,6 @@ class ColumnMappingCreate(BaseModel):
     is_nullable: bool = Field(default=True, description="Whether the column is nullable")
     default_value: Optional[str] = Field(None, description="Default value if source is null")
     exclude: bool = Field(default=False, description="Skip this column in the load")
-    is_calculated: bool = Field(default=False, description="Is this a calculated/derived column")
-    expression: Optional[str] = Field(None, description="SQL expression for calculated columns")
     column_order: int = Field(default=0, description="Order in destination table")
     is_primary_key: bool = Field(default=False, description="Whether this column is part of the primary key")
 
@@ -74,8 +72,6 @@ class ColumnMappingResponse(BaseModel):
     is_nullable: bool = Field(default=True)
     default_value: Optional[str] = Field(None)
     exclude: bool = Field(default=False)
-    is_calculated: bool = Field(default=False)
-    expression: Optional[str] = Field(None, validation_alias="calculation_expression")
     column_order: int = Field(default=0)
     is_primary_key: bool = Field(default=False)
 

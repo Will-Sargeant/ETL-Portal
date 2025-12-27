@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo } from 'react'
 import { GripVertical, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -14,8 +13,7 @@ import {
 } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { CalculatedColumnBuilder } from './CalculatedColumnBuilder'
-import { transformationsApi } from '@/lib/api/transformations'
+import { getTransformationsByCategory } from '@/lib/transformations'
 import type { ColumnMappingConfig } from '@/types/source'
 import type { ColumnInfo } from '@/types/source'
 import type { TableSchema } from '@/types/destination'
@@ -47,13 +45,10 @@ export function ColumnMappingEditor({
   onChange,
 }: ColumnMappingEditorProps) {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
-  const [showCalculatedBuilder, setShowCalculatedBuilder] = useState(false)
 
-  // Fetch transformations from API
-  const { data: transformationsByCategory, isLoading: isLoadingTransformations } = useQuery({
-    queryKey: ['transformations', 'categories'],
-    queryFn: transformationsApi.getByCategory,
-  })
+  // Get transformations grouped by category
+  const transformationsByCategory = useMemo(() => getTransformationsByCategory(), [])
+  const isLoadingTransformations = false
 
   const toggleRow = (index: number) => {
     const newExpanded = new Set(expandedRows)
@@ -104,20 +99,6 @@ export function ColumnMappingEditor({
       exclude: !mapping.destinationColumn,
     }))
     onChange(updated)
-  }
-
-  const handleAddCalculatedColumn = (column: ColumnMappingConfig) => {
-    onChange([...value, column])
-  }
-
-  const getExistingColumnNames = (): string[] => {
-    return value
-      .map((m) => m.destinationColumn)
-      .filter((name): name is string => !!name)
-  }
-
-  const getNextColumnOrder = (): number => {
-    return value.length > 0 ? Math.max(...value.map((m) => m.columnOrder || 0)) + 1 : 0
   }
 
   const updateMapping = (index: number, updates: Partial<ColumnMappingConfig>) => {
@@ -209,15 +190,6 @@ export function ColumnMappingEditor({
           onClick={handleExcludeUnmapped}
         >
           Exclude Unmapped
-        </Button>
-        <Button
-          type="button"
-          variant="default"
-          size="sm"
-          onClick={() => setShowCalculatedBuilder(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Calculated Column
         </Button>
       </div>
 
@@ -515,18 +487,8 @@ export function ColumnMappingEditor({
       <div className="text-sm text-muted-foreground">
         {value.filter((m) => m.destinationColumn && !m.exclude).length} of{' '}
         {value.length} columns mapped •{' '}
-        {value.filter((m) => m.exclude).length} excluded •{' '}
-        {value.filter((m) => m.isCalculated).length} calculated
+        {value.filter((m) => m.exclude).length} excluded
       </div>
-
-      {/* Calculated Column Builder Dialog */}
-      <CalculatedColumnBuilder
-        open={showCalculatedBuilder}
-        onOpenChange={setShowCalculatedBuilder}
-        onAdd={handleAddCalculatedColumn}
-        existingColumnNames={getExistingColumnNames()}
-        nextColumnOrder={getNextColumnOrder()}
-      />
     </div>
   )
 }

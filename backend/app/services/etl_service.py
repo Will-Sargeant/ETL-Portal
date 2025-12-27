@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.etl_job import ETLJob, SourceType, DestinationType
 from app.models.job_run import JobRun, RunStatus
@@ -50,7 +51,10 @@ class ETLService:
             if not job_run:
                 raise ValueError(f"JobRun {job_run_id} not found")
 
-            job = await self.db.get(ETLJob, job_id)
+            # Eagerly load column_mappings to avoid lazy loading in async context
+            stmt = select(ETLJob).where(ETLJob.id == job_id).options(selectinload(ETLJob.column_mappings))
+            result = await self.db.execute(stmt)
+            job = result.scalar_one_or_none()
             if not job:
                 raise ValueError(f"ETL Job {job_id} not found")
 
@@ -209,83 +213,67 @@ class ETLService:
                 logger.debug("column_excluded", column=mapping.source_column)
                 continue
 
-            # Handle calculated columns
-            if mapping.is_calculated and mapping.calculation_expression:
+            # Skip columns without a source (table-only columns)
+            # These columns exist in the destination table but not in the source CSV
+            if not mapping.source_column:
+                logger.debug("column_skipped_no_source", column=mapping.dest_column)
+                continue
+
+            # Get source column
+            if mapping.source_column not in df.columns:
+                raise ValueError(
+                    f"Source column '{mapping.source_column}' not found in data"
+                )
+
+            series = df[mapping.source_column].copy()
+
+            # Apply transformations if specified (handles both list and single string)
+            if mapping.transformations:
                 try:
-                    series = transformation_service.evaluate_expression(
-                        df,
-                        mapping.calculation_expression,
-                        mapping.dest_column
-                    )
+                    # Handle both list and single transformation for backward compatibility
+                    if isinstance(mapping.transformations, list):
+                        series = transformation_service.apply_transformations(
+                            series,
+                            mapping.transformations
+                        )
+                    else:
+                        series = transformation_service.apply_transformation(
+                            series,
+                            mapping.transformations
+                        )
                     logger.info(
-                        "calculated_column_created",
-                        column=mapping.dest_column,
-                        expression=mapping.calculation_expression
+                        "transformation_applied",
+                        source_column=mapping.source_column,
+                        transformation=mapping.transformations
                     )
                 except Exception as e:
                     logger.error(
-                        "calculated_column_failed",
-                        column=mapping.dest_column,
-                        expression=mapping.calculation_expression,
+                        "transformation_failed",
+                        column=mapping.source_column,
+                        transformation=mapping.transformations,
                         error=str(e)
                     )
                     raise
-            else:
-                # Get source column
-                if mapping.source_column not in df.columns:
-                    raise ValueError(
-                        f"Source column '{mapping.source_column}' not found in data"
+
+            # Apply data type conversion
+            if mapping.dest_data_type:
+                try:
+                    series = transformation_service.convert_data_type(
+                        series,
+                        mapping.dest_data_type
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "data_type_conversion_failed",
+                        column=mapping.source_column,
+                        target_type=mapping.dest_data_type,
+                        error=str(e),
+                        message="Continuing with original type"
                     )
 
-                series = df[mapping.source_column].copy()
-
-                # Apply transformations if specified (handles both list and single string)
-                if mapping.transformations:
-                    try:
-                        # Handle both list and single transformation for backward compatibility
-                        if isinstance(mapping.transformations, list):
-                            series = transformation_service.apply_transformations(
-                                series,
-                                mapping.transformations
-                            )
-                        else:
-                            series = transformation_service.apply_transformation(
-                                series,
-                                mapping.transformations
-                            )
-                        logger.info(
-                            "transformation_applied",
-                            source_column=mapping.source_column,
-                            transformation=mapping.transformations
-                        )
-                    except Exception as e:
-                        logger.error(
-                            "transformation_failed",
-                            column=mapping.source_column,
-                            transformation=mapping.transformations,
-                            error=str(e)
-                        )
-                        raise
-
-                # Apply data type conversion
-                if mapping.dest_data_type:
-                    try:
-                        series = transformation_service.convert_data_type(
-                            series,
-                            mapping.dest_data_type
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            "data_type_conversion_failed",
-                            column=mapping.source_column,
-                            target_type=mapping.dest_data_type,
-                            error=str(e),
-                            message="Continuing with original type"
-                        )
-
-                # Apply default value for nulls
-                if mapping.default_value and not mapping.is_nullable:
-                    series = series.fillna(mapping.default_value)
+            # Apply default value for nulls
+            if mapping.default_value and not mapping.is_nullable:
+                series = series.fillna(mapping.default_value)
 
             # Add to transformed dataframe
             transformed_df[mapping.dest_column] = series
@@ -373,8 +361,28 @@ class ETLService:
 
                 if not table_exists:
                     logger.info("creating_new_table", table=table)
+
+                    # Check if DDL contains invalid types (like "number" which should be "NUMERIC")
+                    ddl_to_use = job.new_table_ddl
+                    if ddl_to_use and ' number ' in ddl_to_use.lower():
+                        logger.warning(
+                            "invalid_ddl_detected",
+                            table=table,
+                            message="DDL contains invalid 'number' type, fixing inline"
+                        )
+                        # Fix invalid types in the DDL string directly
+                        # Replace " number " with " NUMERIC " (case-insensitive)
+                        import re
+                        ddl_to_use = re.sub(
+                            r'\b(number|NUMBER)\b',
+                            'NUMERIC',
+                            ddl_to_use,
+                            flags=re.IGNORECASE
+                        )
+                        logger.info("ddl_fixed_inline", table=table)
+
                     try:
-                        await conn.execute(job.new_table_ddl)
+                        await conn.execute(ddl_to_use)
                         logger.info("table_created", table=table)
                     except Exception as e:
                         logger.error("table_creation_failed", table=table, error=str(e))
@@ -453,21 +461,83 @@ class ETLService:
                     else:
                         raise ValueError(f"Table {schema}.{table} does not exist and no DDL provided")
             else:
-                # For INSERT and UPSERT strategies, validate schema matches
+                # For INSERT and UPSERT strategies, handle schema changes gracefully
                 if table_exists:
-                    if set(existing_columns) != set(columns):
-                        logger.error(
-                            "schema_mismatch_for_upsert_or_insert",
+                    existing_set = set(existing_columns)
+                    expected_set = set(columns)
+
+                    # Check for missing columns (columns in job but not in table)
+                    missing_columns = expected_set - existing_set
+
+                    # Check for extra columns (columns in table but not in job)
+                    extra_columns = existing_set - expected_set
+
+                    if missing_columns or extra_columns:
+                        logger.warning(
+                            "schema_mismatch_detected",
                             table=table,
                             load_strategy=job.load_strategy,
                             existing_columns=existing_columns,
-                            expected_columns=columns
+                            expected_columns=columns,
+                            missing_columns=list(missing_columns),
+                            extra_columns=list(extra_columns)
                         )
-                        raise ValueError(
-                            f"Schema mismatch detected for {job.load_strategy} strategy. "
-                            f"Table '{schema}.{table}' has columns {existing_columns} but job expects {columns}. "
-                            f"Either use TRUNCATE_INSERT strategy to auto-recreate the table, or update the job's column mappings to match the existing table schema."
-                        )
+
+                        # For INSERT strategy, automatically add missing columns
+                        if missing_columns and job.load_strategy == "insert":
+                            logger.info(
+                                "auto_adding_missing_columns",
+                                table=table,
+                                columns=list(missing_columns)
+                            )
+
+                            # Get column type mappings from job
+                            column_type_map = {
+                                mapping.dest_column: mapping.dest_data_type
+                                for mapping in job.column_mappings
+                                if not mapping.exclude
+                            }
+
+                            # Add each missing column
+                            for col in missing_columns:
+                                col_type = column_type_map.get(col, 'TEXT')
+                                alter_sql = f'ALTER TABLE "{schema}"."{table}" ADD COLUMN "{col}" {col_type}'
+                                try:
+                                    await conn.execute(alter_sql)
+                                    logger.info("column_added", table=table, column=col, type=col_type)
+                                except Exception as e:
+                                    logger.error("column_add_failed", table=table, column=col, error=str(e))
+                                    raise ValueError(f"Failed to add column '{col}' to table '{schema}'.'{table}': {str(e)}")
+
+                            # Refresh the existing columns list
+                            existing_columns_result = await conn.fetch(existing_columns_query)
+                            existing_columns = [row['column_name'] for row in existing_columns_result]
+
+                        # Log warning about extra columns (but don't auto-drop for safety)
+                        if extra_columns and job.load_strategy == "insert":
+                            logger.warning(
+                                "extra_columns_detected",
+                                table=table,
+                                extra_columns=list(extra_columns),
+                                message="Table has columns not in job configuration. "
+                                        "Data will still be inserted successfully, but these columns will remain NULL. "
+                                        f"To remove them, run: ALTER TABLE {schema}.{table} DROP COLUMN <column_name>"
+                            )
+
+                        # For UPSERT strategy, fail if schema doesn't match exactly
+                        elif job.load_strategy == "upsert" and (missing_columns or extra_columns):
+                            logger.error(
+                                "schema_mismatch_for_upsert",
+                                table=table,
+                                existing_columns=existing_columns,
+                                expected_columns=columns
+                            )
+                            raise ValueError(
+                                f"Schema mismatch detected for UPSERT strategy. "
+                                f"Table '{schema}.{table}' has columns {existing_columns} but job expects {columns}. "
+                                f"UPSERT requires exact schema match. Either use TRUNCATE_INSERT strategy to auto-recreate the table, "
+                                f"or manually update the table schema to match the job's column mappings."
+                            )
                 else:
                     # Table doesn't exist for INSERT/UPSERT, create it if we have DDL
                     if job.new_table_ddl:

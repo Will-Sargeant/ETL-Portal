@@ -27,8 +27,8 @@ def generate_ddl(schema: str, table: str, column_mappings: List[ColumnMappingCre
     for mapping in column_mappings:
         mapping_dict = mapping.model_dump()
 
-        # Skip excluded and calculated columns
-        if mapping_dict.get("exclude", False) or mapping_dict.get("is_calculated", False):
+        # Skip excluded columns
+        if mapping_dict.get("exclude", False):
             continue
 
         col_name = mapping_dict["destination_column"]
@@ -93,8 +93,6 @@ async def create_etl_job(
             exclude=mapping_dict.get("exclude", False),
             column_order=mapping_dict.get("column_order", 0),
             is_primary_key=mapping_dict.get("is_primary_key", False),
-            is_calculated=mapping_dict.get("is_calculated", False),
-            calculation_expression=mapping_dict.get("expression"),
         )
         db.add(db_mapping)
 
@@ -319,12 +317,15 @@ async def update_column_mappings(
     """Update column mappings for a job (replaces all existing mappings)."""
     from app.services.ddl_generator import DDLGenerator
 
-    # Get the job to access schema/table info
-    job = await get_etl_job(db, job_id)
+    # Get the job to access schema/table info (without loading mappings to avoid session conflicts)
+    result = await db.execute(
+        select(ETLJob).where(ETLJob.id == job_id)
+    )
+    job = result.scalar_one_or_none()
     if not job:
         raise ValueError(f"Job {job_id} not found")
 
-    # Delete existing mappings
+    # Delete existing mappings using a direct delete statement
     await db.execute(
         select(ColumnMapping).where(ColumnMapping.job_id == job_id)
     )
@@ -333,6 +334,9 @@ async def update_column_mappings(
     )
     for mapping in existing.scalars().all():
         await db.delete(mapping)
+
+    # Flush to ensure deletions are committed before adding new ones
+    await db.flush()
 
     # Create new mappings
     new_mappings = []
@@ -356,8 +360,6 @@ async def update_column_mappings(
             is_nullable=mapping_dict.get('is_nullable', True),
             default_value=mapping_dict.get('default_value'),
             exclude=mapping_dict.get('exclude', False),
-            is_calculated=mapping_dict.get('is_calculated', False),
-            calculation_expression=mapping_dict.get('expression'),
             column_order=mapping_dict.get('column_order', 0),
             is_primary_key=mapping_dict.get('is_primary_key', False),
         )

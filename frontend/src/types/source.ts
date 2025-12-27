@@ -46,8 +46,6 @@ export interface ColumnMappingConfig {
   isNullable: boolean
   defaultValue?: string
   exclude?: boolean
-  isCalculated?: boolean
-  expression?: string
   columnOrder?: number
   isPrimaryKey?: boolean
 }

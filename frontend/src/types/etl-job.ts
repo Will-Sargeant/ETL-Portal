@@ -26,8 +26,6 @@ export interface ColumnMapping {
   is_nullable: boolean
   default_value?: string
   exclude?: boolean
-  is_calculated?: boolean
-  expression?: string
   column_order?: number
   is_primary_key?: boolean
 }

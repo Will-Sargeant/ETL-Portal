@@ -1,12 +1,11 @@
 """
 Transformation service for applying data transformations.
 
-Handles string transformations, data type conversions, and calculated columns.
+Handles string transformations and data type conversions.
 """
 
 import pandas as pd
 from typing import Optional, Dict, Any
-from simpleeval import simple_eval, NameNotDefined, InvalidExpression
 import structlog
 
 logger = structlog.get_logger()
@@ -254,97 +253,6 @@ class TransformationService:
             result = self.apply_transformation(result, transformation)
 
         return result
-
-    def evaluate_expression(
-        self,
-        df: pd.DataFrame,
-        expression: str,
-        column_name: str = "calculated"
-    ) -> pd.Series:
-        """
-        Safely evaluate a calculated column expression.
-
-        Args:
-            df: DataFrame containing source columns
-            expression: Expression to evaluate (e.g., "col_a + col_b * 2")
-            column_name: Name for the resulting series
-
-        Returns:
-            pandas Series with calculated values
-
-        Raises:
-            ValueError: If expression is invalid or references unknown columns
-        """
-        if not expression:
-            raise ValueError("Expression cannot be empty")
-
-        # Create a safe namespace with column names as variables
-        # Each column becomes a pandas Series that can be used in calculations
-        namespace = {col: df[col] for col in df.columns}
-
-        # Add common functions that are safe to use
-        safe_functions = {
-            'abs': abs,
-            'min': min,
-            'max': max,
-            'round': round,
-            'len': len,
-            'str': str,
-            'int': int,
-            'float': float,
-        }
-        namespace.update(safe_functions)
-
-        try:
-            # Use simpleeval for safe expression evaluation
-            # This prevents arbitrary code execution
-            result = simple_eval(
-                expression,
-                names=namespace,
-                functions=safe_functions
-            )
-
-            # Convert result to pandas Series if it isn't already
-            if not isinstance(result, pd.Series):
-                result = pd.Series([result] * len(df), name=column_name)
-            else:
-                result.name = column_name
-
-            logger.info(
-                "expression_evaluated",
-                expression=expression,
-                column_name=column_name,
-                rows=len(result)
-            )
-
-            return result
-
-        except NameNotDefined as e:
-            logger.error(
-                "expression_evaluation_failed",
-                expression=expression,
-                error="Column not found",
-                details=str(e)
-            )
-            raise ValueError(f"Expression references unknown column: {e}")
-
-        except InvalidExpression as e:
-            logger.error(
-                "expression_evaluation_failed",
-                expression=expression,
-                error="Invalid expression",
-                details=str(e)
-            )
-            raise ValueError(f"Invalid expression: {e}")
-
-        except Exception as e:
-            logger.error(
-                "expression_evaluation_failed",
-                expression=expression,
-                error=type(e).__name__,
-                details=str(e)
-            )
-            raise ValueError(f"Failed to evaluate expression: {e}")
 
     def convert_data_type(
         self,

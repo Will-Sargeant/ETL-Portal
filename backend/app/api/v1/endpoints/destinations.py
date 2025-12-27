@@ -160,7 +160,7 @@ async def get_table_schema(
         # Find the specific table
         target_table = None
         for t in tables:
-            if t.schema == schema and t.name == table:
+            if t.schema_name == schema and t.name == table:
                 target_table = t
                 break
 

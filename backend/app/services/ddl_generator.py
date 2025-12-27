@@ -25,6 +25,7 @@ class DDLGenerator:
         "BIGINT": "BIGINT",
         "NUMERIC": "NUMERIC",
         "DECIMAL": "DECIMAL(18,2)",
+        "NUMBER": "NUMERIC",  # Uppercase variant
         "number": "NUMERIC",
         "int": "INTEGER",
         "float": "NUMERIC",

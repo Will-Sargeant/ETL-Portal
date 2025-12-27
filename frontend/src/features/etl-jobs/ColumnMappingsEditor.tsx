@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useMemo } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Edit2, Save, X, Trash2, ArrowRight, CheckCircle2, XCircle } from 'lucide-react'
 
@@ -18,11 +18,14 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { etlJobsApi } from '@/lib/api/etl-jobs'
-import { transformationsApi } from '@/lib/api/transformations'
+import { getTransformationsByCategory, getCategoryDisplayName } from '@/lib/transformations'
 import type { ETLJob, ColumnMapping } from '@/types/etl-job'
 
 interface ColumnMappingsEditorProps {
-  job: ETLJob
+  job?: ETLJob
+  wizardMode?: boolean
+  columnMappings?: ColumnMapping[]
+  onMappingsChange?: (mappings: ColumnMapping[]) => void
 }
 
 const DATA_TYPES = [
@@ -39,25 +42,49 @@ const DATA_TYPES = [
   'jsonb',
 ]
 
-export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
+export function ColumnMappingsEditor({
+  job,
+  wizardMode = false,
+  columnMappings: wizardMappings,
+  onMappingsChange,
+}: ColumnMappingsEditorProps) {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editedMapping, setEditedMapping] = useState<ColumnMapping | null>(null)
 
-  // Fetch transformations from API
-  const { data: transformationsByCategory, isLoading: isLoadingTransformations } = useQuery({
-    queryKey: ['transformations', 'categories'],
-    queryFn: transformationsApi.getByCategory,
-  })
+  // Get column mappings - either from wizard props or job
+  const columnMappings = wizardMode ? (wizardMappings || []) : (job?.column_mappings || [])
+
+  // Reset editing state when column mappings change (e.g., when user goes back and selects a different table)
+  useEffect(() => {
+    if (wizardMode && editingId !== null) {
+      // In wizard mode, clear editing state when mappings change from parent
+      setEditingId(null)
+      setEditedMapping(null)
+    }
+  }, [wizardMappings, wizardMode])
+
+  // Get transformations grouped by category
+  const transformationsByCategory = useMemo(() => getTransformationsByCategory(), [])
+  const isLoadingTransformations = false
 
   const updateMutation = useMutation({
     mutationFn: async (mappings: ColumnMapping[]) => {
-      // Update column mappings via API
-      return etlJobsApi.updateMappings(job.id, mappings)
+      // Update column mappings via API (only in non-wizard mode)
+      if (!wizardMode && job) {
+        return etlJobsApi.updateMappings(job.id, mappings)
+      }
+      return mappings
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['etl-job', job.id.toString()] })
-      toast.success('Column mappings updated successfully!')
+    onSuccess: (mappings) => {
+      if (wizardMode) {
+        // In wizard mode, call the callback
+        onMappingsChange?.(mappings)
+      } else if (job) {
+        // In regular mode, invalidate queries
+        queryClient.invalidateQueries({ queryKey: ['etl-job', job.id.toString()] })
+        toast.success('Column mappings updated successfully!')
+      }
       setEditingId(null)
       setEditedMapping(null)
     },
@@ -82,17 +109,19 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
   const handleSave = () => {
     if (!editedMapping) return
 
-    const updatedMappings = job.column_mappings.map(m =>
+    const updatedMappings = columnMappings.map(m =>
       m.id === editingId ? editedMapping : m
     )
     updateMutation.mutate(updatedMappings)
   }
 
   const handleDelete = (mappingId: number | undefined) => {
-    if (!mappingId) return
+    if (!mappingId && !wizardMode) return
 
     if (confirm('Are you sure you want to delete this column mapping?')) {
-      const updatedMappings = job.column_mappings.filter(m => m.id !== mappingId)
+      const updatedMappings = wizardMode
+        ? columnMappings.filter((m, idx) => idx !== editingId)
+        : columnMappings.filter(m => m.id !== mappingId)
       updateMutation.mutate(updatedMappings)
     }
   }
@@ -101,6 +130,7 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
     if (!editedMapping) return
     setEditedMapping({ ...editedMapping, [field]: value })
   }
+
 
   const getDataTypeBadge = (dataType: string) => {
     const colors: Record<string, string> = {
@@ -119,7 +149,7 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
     return colors[dataType.toLowerCase()] || colors.text
   }
 
-  if (!job.column_mappings || job.column_mappings.length === 0) {
+  if (!columnMappings || columnMappings.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -138,14 +168,18 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Column Mappings & Transformations</CardTitle>
-        <CardDescription>
-          View and edit how source columns are mapped and transformed for the destination
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Column Mappings & Transformations</CardTitle>
+            <CardDescription>
+              View and edit how source columns are mapped and transformed for the destination
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {job.column_mappings.map((mapping, idx) => {
+          {columnMappings.map((mapping, idx) => {
             const isEditing = editingId === mapping.id
             const currentMapping = isEditing ? editedMapping! : mapping
 
@@ -162,16 +196,20 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Source Column */}
                       <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">Source Column</Label>
+                        <Label className="text-xs text-muted-foreground">
+                          Source Column {!currentMapping.source_column && '(No CSV source)'}
+                        </Label>
                         <div className="flex items-center gap-2">
                           <Input
-                            value={currentMapping.source_column}
+                            value={currentMapping.source_column || 'N/A - Table column only'}
                             disabled
                             className="font-mono text-sm"
                           />
-                          <Badge className={getDataTypeBadge(currentMapping.source_type)}>
-                            {currentMapping.source_type}
-                          </Badge>
+                          {currentMapping.source_column && (
+                            <Badge className={getDataTypeBadge(currentMapping.source_type)}>
+                              {currentMapping.source_type}
+                            </Badge>
+                          )}
                         </div>
                       </div>
 
@@ -267,18 +305,6 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
                       )}
                     </div>
 
-                    {/* Calculated Column */}
-                    {currentMapping.is_calculated && (
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">Expression</Label>
-                        <Input
-                          value={currentMapping.expression || ''}
-                          onChange={(e) => updateField('expression', e.target.value)}
-                          placeholder="e.g., column_a + column_b"
-                          className="font-mono text-sm"
-                        />
-                      </div>
-                    )}
 
                     {/* Default Value */}
                     <div className="space-y-2">
@@ -355,12 +381,20 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
                         {/* Column Flow */}
                         <div className="flex items-center gap-3 mb-3">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm font-medium">
-                              {mapping.source_column}
-                            </span>
-                            <Badge className={getDataTypeBadge(mapping.source_type)}>
-                              {mapping.source_type}
-                            </Badge>
+                            {mapping.source_column ? (
+                              <>
+                                <span className="font-mono text-sm font-medium">
+                                  {mapping.source_column}
+                                </span>
+                                <Badge className={getDataTypeBadge(mapping.source_type)}>
+                                  {mapping.source_type}
+                                </Badge>
+                              </>
+                            ) : (
+                              <span className="text-sm text-muted-foreground italic">
+                                No CSV source
+                              </span>
+                            )}
                           </div>
 
                           <ArrowRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -375,8 +409,26 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
                           </div>
                         </div>
 
+                        {/* Warning for columns requiring user action */}
+                        {(mapping as any).requiresUserAction && !mapping.source_column && (
+                          <div className="mb-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs text-yellow-800 dark:text-yellow-200">
+                            ⚠️ <strong>Action Required:</strong> This table column requires a value (NOT NULL, no default).
+                            Either map it to a CSV column or set a default value.
+                          </div>
+                        )}
+
                         {/* Details */}
                         <div className="flex flex-wrap gap-2 text-xs">
+                          {!mapping.source_column && mapping.default_value && (
+                            <Badge variant="outline" className="bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300">
+                              Auto-populated (default)
+                            </Badge>
+                          )}
+                          {!mapping.source_column && !mapping.default_value && mapping.is_nullable && (
+                            <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
+                              Optional (nullable)
+                            </Badge>
+                          )}
                           {mapping.transformations && mapping.transformations.length > 0 && (
                             <Badge variant="secondary">
                               Transforms: {mapping.transformations.join(' → ')}
@@ -385,11 +437,6 @@ export function ColumnMappingsEditor({ job }: ColumnMappingsEditorProps) {
                           {!mapping.transformations && mapping.transformation && (
                             <Badge variant="secondary">
                               Transform: {mapping.transformation}
-                            </Badge>
-                          )}
-                          {mapping.is_calculated && (
-                            <Badge variant="secondary">
-                              Calculated: {mapping.expression}
                             </Badge>
                           )}
                           {mapping.default_value && (

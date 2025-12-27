@@ -30,9 +30,5 @@ class ColumnMapping(Base):
     column_order = Column(Integer, default=0, nullable=False)
     is_primary_key = Column(Boolean, default=False, nullable=False)
 
-    # Is this a calculated/derived column?
-    is_calculated = Column(Boolean, default=False, nullable=False)
-    calculation_expression = Column(String(1000), nullable=True)
-
     # Relationship
     job = relationship("ETLJob", back_populates="column_mappings")
