@@ -125,7 +125,7 @@ export function ColumnMappingStep({ state, onUpdate }: ColumnMappingStepProps) {
       <div>
         <h2 className="text-2xl font-bold">Column Mapping & Transformations</h2>
         <p className="text-muted-foreground mt-1">
-          Map CSV columns to database columns and configure calculated fields
+          Map source columns to database columns and configure calculated fields
         </p>
       </div>
 
@@ -170,6 +170,18 @@ export function ColumnMappingStep({ state, onUpdate }: ColumnMappingStepProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Primary Key Requirement Alert for UPSERT */}
+      {loadStrategy === 'upsert' && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <Info className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
+            <strong>Primary Key Required:</strong> UPSERT strategy requires at least one column to be marked as a Primary Key.
+            These columns will be used to identify and update existing rows. Please mark your unique identifier column(s)
+            (such as ID, email, or order number) as Primary Keys using the checkbox in the column mapping grid below.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <ColumnMappingGrid
         columnMappings={state.columnMappings}

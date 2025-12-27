@@ -25,11 +25,29 @@ export type LoadStrategy = 'insert' | 'upsert' | 'truncate_insert'
 export type DestinationType = 'postgresql' | 'redshift'
 
 /**
- * Source configuration
+ * Source configuration for CSV
  */
 export interface SourceConfig {
   file_id: string
   filename: string
+}
+
+/**
+ * Google Sheets configuration
+ */
+export interface GoogleSheetsConfig {
+  encrypted_credentials: string
+  spreadsheet_id: string
+  sheet_name: string
+}
+
+/**
+ * Detected column info from source
+ */
+export interface DetectedColumn {
+  name: string
+  type: string
+  order: number
 }
 
 /**
@@ -40,6 +58,8 @@ export interface WizardState {
   sourceType: SourceType
   uploadedData: UploadResponse | null
   sourceConfig: SourceConfig | null
+  googleSheetsConfig: GoogleSheetsConfig | null
+  detectedColumns: DetectedColumn[]
 
   // Step 2: Job Details
   jobName: string
@@ -69,6 +89,7 @@ export interface WizardState {
 export interface ValidationResult {
   valid: boolean
   errors: string[]
+  warnings?: string[]
 }
 
 /**
@@ -95,6 +116,8 @@ export const INITIAL_WIZARD_STATE: WizardState = {
   sourceType: 'csv',
   uploadedData: null,
   sourceConfig: null,
+  googleSheetsConfig: null,
+  detectedColumns: [],
 
   // Step 2
   jobName: '',

@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 # Import endpoint routers
-from app.api.v1.endpoints import sources, credentials, destinations, etl_jobs, job_runs, schedules
+from app.api.v1.endpoints import sources, credentials, destinations, etl_jobs, job_runs, schedules, google_auth, google_sheets
 
 api_router = APIRouter()
 
@@ -12,6 +12,8 @@ api_router.include_router(destinations.router, prefix="/destinations", tags=["de
 api_router.include_router(etl_jobs.router, prefix="/jobs", tags=["jobs"])
 api_router.include_router(job_runs.router, prefix="/job-runs", tags=["job-runs"])
 api_router.include_router(schedules.router, prefix="/schedules", tags=["schedules"])
+api_router.include_router(google_auth.router, prefix="/google", tags=["google-auth"])
+api_router.include_router(google_sheets.router, prefix="/google/sheets", tags=["google-sheets"])
 
 
 @api_router.get("/")

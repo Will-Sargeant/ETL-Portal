@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     AIRFLOW_USERNAME: str = Field(default="admin", env="AIRFLOW_USERNAME")
     AIRFLOW_PASSWORD: str = Field(default="admin", env="AIRFLOW_PASSWORD")
 
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = Field(default="", env="GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: str = Field(default="", env="GOOGLE_CLIENT_SECRET")
+    GOOGLE_REDIRECT_URI: str = Field(
+        default="http://localhost:3000/auth/google/callback",
+        env="GOOGLE_REDIRECT_URI"
+    )
+
     class Config:
         env_file = ".env"
         case_sensitive = True

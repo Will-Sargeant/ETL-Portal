@@ -10,19 +10,33 @@ import type { WizardState, ValidationResult } from './types'
 export function validateSourceSelection(state: WizardState): ValidationResult {
   const errors: string[] = []
 
-  // Must have uploaded data
-  if (!state.uploadedData) {
-    errors.push('Please upload a CSV file')
-  }
+  if (state.sourceType === 'csv') {
+    // CSV validation
+    if (!state.uploadedData) {
+      errors.push('Please upload a CSV file')
+    }
 
-  // Must have source configuration
-  if (!state.sourceConfig) {
-    errors.push('Source configuration is missing')
-  }
+    // Must have source configuration
+    if (!state.sourceConfig) {
+      errors.push('Source configuration is missing')
+    }
 
-  // Uploaded data must have columns
-  if (state.uploadedData && (!state.uploadedData.columns || state.uploadedData.columns.length === 0)) {
-    errors.push('Uploaded file has no columns')
+    // Uploaded data must have columns
+    if (state.uploadedData && (!state.uploadedData.columns || state.uploadedData.columns.length === 0)) {
+      errors.push('Uploaded file has no columns')
+    }
+  } else if (state.sourceType === 'google_sheets') {
+    // Google Sheets validation
+    if (!state.googleSheetsConfig) {
+      errors.push('Please select a Google Sheet')
+    }
+
+    // Must have detected columns
+    if (!state.detectedColumns || state.detectedColumns.length === 0) {
+      errors.push('No columns detected from Google Sheet')
+    }
+  } else {
+    errors.push('Please select a source type')
   }
 
   return {
@@ -102,6 +116,7 @@ export function validateDestination(state: WizardState): ValidationResult {
  */
 export function validateColumnMapping(state: WizardState): ValidationResult {
   const errors: string[] = []
+  const warnings: string[] = []
 
   // Must have at least one non-excluded column
   const activeColumns = state.columnMappings.filter((col) => !col.exclude)
@@ -122,16 +137,53 @@ export function validateColumnMapping(state: WizardState): ValidationResult {
     errors.push(`Duplicate destination column names: ${[...new Set(duplicates)].join(', ')}`)
   }
 
-  // If load strategy is upsert, must have upsert keys
-  if (state.loadStrategy === 'upsert' && state.destinationConfig) {
-    if (!state.destinationConfig.upsertKeys || state.destinationConfig.upsertKeys.length === 0) {
-      errors.push('Upsert keys are required for upsert load strategy')
+  // Get primary key columns
+  const primaryKeyColumns = state.columnMappings
+    .filter((col) => col.isPrimaryKey && !col.exclude && col.destinationColumn)
+    .map((col) => col.destinationColumn!)
+
+  // UPSERT strategy validation - STRICT
+  if (state.loadStrategy === 'upsert') {
+    // Must have at least one primary key column
+    if (primaryKeyColumns.length === 0) {
+      errors.push(
+        'UPSERT strategy requires at least one column to be marked as a Primary Key. ' +
+        'These columns uniquely identify rows for update operations.'
+      )
+    }
+
+    // Must have upsert keys
+    if (!state.destinationConfig?.upsertKeys || state.destinationConfig.upsertKeys.length === 0) {
+      errors.push('UPSERT strategy requires selecting upsert key columns.')
+    }
+
+    // Upsert keys must be a subset of primary keys (or match exactly)
+    if (state.destinationConfig?.upsertKeys && primaryKeyColumns.length > 0) {
+      const upsertKeys = state.destinationConfig.upsertKeys
+      const invalidUpsertKeys = upsertKeys.filter(key => !primaryKeyColumns.includes(key))
+
+      if (invalidUpsertKeys.length > 0) {
+        errors.push(
+          `Upsert keys must be marked as Primary Keys. The following upsert keys are not primary keys: ${invalidUpsertKeys.join(', ')}. ` +
+          'Please mark these columns as Primary Keys or select different upsert keys.'
+        )
+      }
+    }
+  }
+
+  // INSERT/TRUNCATE_INSERT strategy validation - WARNING ONLY
+  if (state.loadStrategy === 'insert' || state.loadStrategy === 'truncate_insert') {
+    if (primaryKeyColumns.length === 0) {
+      warnings.push(
+        'No primary key selected. Consider marking a unique identifier column as the primary key for better data integrity and query performance.'
+      )
     }
   }
 
   return {
     valid: errors.length === 0,
     errors,
+    warnings,
   }
 }
 

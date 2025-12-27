@@ -149,8 +149,7 @@ class ETLService:
         if job.source_type == SourceType.CSV:
             return await self._read_csv(job.source_config)
         elif job.source_type == SourceType.GOOGLE_SHEETS:
-            # Will be implemented in Phase 9
-            raise NotImplementedError("Google Sheets support coming soon")
+            return await self._read_google_sheets(job.source_config)
         else:
             raise ValueError(f"Unsupported source type: {job.source_type}")
 
@@ -172,6 +171,61 @@ class ETLService:
         logger.info(
             "csv_read_complete",
             file_id=file_id,
+            rows=len(df),
+            columns=len(df.columns)
+        )
+
+        return df
+
+    async def _read_google_sheets(self, source_config: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Read data from Google Sheets.
+
+        Args:
+            source_config: Dictionary containing:
+                - encrypted_credentials: Encrypted Google OAuth credentials
+                - spreadsheet_id: Google Sheets spreadsheet ID
+                - sheet_name: Name of the sheet to read
+
+        Returns:
+            DataFrame with sheet data
+
+        Raises:
+            ValueError: If required config is missing or read fails
+        """
+        from app.services.google_sheets_service import google_sheets_service
+        from app.core.encryption import decrypt_credentials
+
+        encrypted_credentials = source_config.get('encrypted_credentials')
+        spreadsheet_id = source_config.get('spreadsheet_id')
+        sheet_name = source_config.get('sheet_name')
+
+        if not all([encrypted_credentials, spreadsheet_id, sheet_name]):
+            raise ValueError(
+                "Google Sheets source config must include 'encrypted_credentials', "
+                "'spreadsheet_id', and 'sheet_name'"
+            )
+
+        logger.info(
+            "reading_google_sheets",
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name
+        )
+
+        # Decrypt credentials
+        credentials = decrypt_credentials(encrypted_credentials)
+
+        # Fetch data from Google Sheets
+        df = await google_sheets_service.get_sheet_data(
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
+            credentials_dict=credentials
+        )
+
+        logger.info(
+            "google_sheets_read_complete",
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
             rows=len(df),
             columns=len(df.columns)
         )
@@ -394,16 +448,29 @@ class ETLService:
             columns = list(df.columns)
             column_names_str = ', '.join([f'"{col}"' for col in columns])
 
-            # Check if table exists and get its schema
+            # Check if table exists and get its schema with data types
             existing_columns_query = f"""
-                SELECT column_name
+                SELECT column_name, data_type, udt_name
                 FROM information_schema.columns
                 WHERE table_schema = '{schema}' AND table_name = '{table}'
                 ORDER BY ordinal_position
             """
             existing_columns_result = await conn.fetch(existing_columns_query)
             existing_columns = [row['column_name'] for row in existing_columns_result]
+            # Build a map of column name -> PostgreSQL data type
+            existing_column_types = {
+                row['column_name']: row['udt_name'] if row['udt_name'] else row['data_type']
+                for row in existing_columns_result
+            }
             table_exists = len(existing_columns) > 0
+
+            # Auto-generated timestamp columns that are managed by the backend
+            # These should be excluded from schema validation
+            auto_generated_columns = {'created_at', 'updated_at', 'inserted_date', 'modified_date'}
+
+            # Filter out auto-generated columns from both lists for schema comparison
+            columns_for_comparison = [col for col in columns if col not in auto_generated_columns]
+            existing_columns_for_comparison = [col for col in existing_columns if col not in auto_generated_columns]
 
             # Handle load strategy
             if job.load_strategy == "truncate_insert":
@@ -418,13 +485,13 @@ class ETLService:
                             logger.info("table_created", table=table)
                         else:
                             raise ValueError(f"Table {schema}.{table} does not exist and no DDL provided")
-                    # Check if columns match
-                    elif set(existing_columns) != set(columns):
+                    # Check if columns match (excluding auto-generated timestamp columns)
+                    elif set(existing_columns_for_comparison) != set(columns_for_comparison):
                         logger.info(
                             "schema_mismatch_detected",
                             table=table,
-                            existing_columns=existing_columns,
-                            new_columns=columns,
+                            existing_columns=existing_columns_for_comparison,
+                            new_columns=columns_for_comparison,
                             action="dropping_and_recreating_table"
                         )
 
@@ -445,7 +512,7 @@ class ETLService:
                             )
                             raise ValueError(
                                 f"Schema mismatch detected but no DDL available to recreate table. "
-                                f"Expected columns: {columns}, Found: {existing_columns}"
+                                f"Expected columns: {columns_for_comparison}, Found: {existing_columns_for_comparison}"
                             )
                     else:
                         # Schema matches, just truncate
@@ -463,8 +530,9 @@ class ETLService:
             else:
                 # For INSERT and UPSERT strategies, handle schema changes gracefully
                 if table_exists:
-                    existing_set = set(existing_columns)
-                    expected_set = set(columns)
+                    # Compare schemas excluding auto-generated timestamp columns
+                    existing_set = set(existing_columns_for_comparison)
+                    expected_set = set(columns_for_comparison)
 
                     # Check for missing columns (columns in job but not in table)
                     missing_columns = expected_set - existing_set
@@ -477,8 +545,8 @@ class ETLService:
                             "schema_mismatch_detected",
                             table=table,
                             load_strategy=job.load_strategy,
-                            existing_columns=existing_columns,
-                            expected_columns=columns,
+                            existing_columns=existing_columns_for_comparison,
+                            expected_columns=columns_for_comparison,
                             missing_columns=list(missing_columns),
                             extra_columns=list(extra_columns)
                         )
@@ -512,6 +580,7 @@ class ETLService:
                             # Refresh the existing columns list
                             existing_columns_result = await conn.fetch(existing_columns_query)
                             existing_columns = [row['column_name'] for row in existing_columns_result]
+                            existing_columns_for_comparison = [col for col in existing_columns if col not in auto_generated_columns]
 
                         # Log warning about extra columns (but don't auto-drop for safety)
                         if extra_columns and job.load_strategy == "insert":
@@ -524,19 +593,20 @@ class ETLService:
                                         f"To remove them, run: ALTER TABLE {schema}.{table} DROP COLUMN <column_name>"
                             )
 
-                        # For UPSERT strategy, fail if schema doesn't match exactly
+                        # For UPSERT strategy, fail if schema doesn't match exactly (excluding auto-generated columns)
                         elif job.load_strategy == "upsert" and (missing_columns or extra_columns):
                             logger.error(
                                 "schema_mismatch_for_upsert",
                                 table=table,
-                                existing_columns=existing_columns,
-                                expected_columns=columns
+                                existing_columns=existing_columns_for_comparison,
+                                expected_columns=columns_for_comparison
                             )
                             raise ValueError(
                                 f"Schema mismatch detected for UPSERT strategy. "
-                                f"Table '{schema}.{table}' has columns {existing_columns} but job expects {columns}. "
+                                f"Table '{schema}.{table}' has columns {existing_columns_for_comparison} but job expects {columns_for_comparison}. "
                                 f"UPSERT requires exact schema match. Either use TRUNCATE_INSERT strategy to auto-recreate the table, "
-                                f"or manually update the table schema to match the job's column mappings."
+                                f"or manually update the table schema to match the job's column mappings. "
+                                f"Note: Auto-generated timestamp columns (created_at, updated_at) are excluded from this comparison."
                             )
                 else:
                     # Table doesn't exist for INSERT/UPSERT, create it if we have DDL
@@ -547,6 +617,184 @@ class ETLService:
                     else:
                         raise ValueError(f"Table {schema}.{table} does not exist and no DDL provided")
 
+            # Add timestamp columns if they exist in the table
+            # Check if table has created_at or updated_at columns
+            has_created_at = 'created_at' in existing_columns
+            has_updated_at = 'updated_at' in existing_columns
+
+            # Strategy-specific timestamp handling:
+            # - INSERT/TRUNCATE_INSERT: Set timestamps to current time in DataFrame
+            # - UPSERT: Add columns with NULL, use COALESCE in INSERT to set defaults
+            if job.load_strategy in ["insert", "truncate_insert"]:
+                # Set actual timestamp values for INSERT/TRUNCATE_INSERT
+                if has_created_at and 'created_at' not in df.columns:
+                    from datetime import datetime
+                    df['created_at'] = datetime.utcnow()
+
+                if has_updated_at and 'updated_at' not in df.columns:
+                    from datetime import datetime
+                    df['updated_at'] = datetime.utcnow()
+            elif job.load_strategy == "upsert":
+                # For UPSERT: Add columns with NULL
+                # INSERT will use COALESCE to default to CURRENT_TIMESTAMP
+                # UPDATE will preserve created_at and set updated_at to CURRENT_TIMESTAMP
+                if has_created_at and 'created_at' not in df.columns:
+                    df['created_at'] = None
+
+                if has_updated_at and 'updated_at' not in df.columns:
+                    df['updated_at'] = None
+
+            # Update columns list to include timestamps
+            columns = list(df.columns)
+            column_names_str = ', '.join([f'"{col}"' for col in columns])
+
+            # For UPSERT and INSERT strategies, convert DataFrame column types to match existing table schema
+            # This prevents type mismatch errors when user changes column types in job config
+            if table_exists and job.load_strategy in ["upsert", "insert"]:
+                for col in columns:
+                    if col in existing_column_types and col in df.columns:
+                        db_type = existing_column_types[col]
+
+                        # Convert DataFrame column to match database type
+                        try:
+                            if db_type in ('text', 'varchar', 'char', 'bpchar'):
+                                # Convert to string
+                                df[col] = df[col].astype(str)
+                                df[col] = df[col].replace('nan', None)  # Convert string 'nan' back to None
+                                df[col] = df[col].replace('<NA>', None)
+                                logger.debug("column_type_converted", column=col, to_type="text", db_type=db_type)
+
+                            elif db_type in ('int2', 'int4', 'int8', 'integer', 'bigint', 'smallint'):
+                                # Convert to integer, handling None/NaN
+                                df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')
+                                logger.debug("column_type_converted", column=col, to_type="integer", db_type=db_type)
+
+                            elif db_type in ('float4', 'float8', 'numeric', 'decimal', 'real', 'double precision'):
+                                # Convert to float, handling None/NaN
+                                df[col] = pd.to_numeric(df[col], errors='coerce')
+                                logger.debug("column_type_converted", column=col, to_type="numeric", db_type=db_type)
+
+                            elif db_type in ('bool', 'boolean'):
+                                # Convert to boolean
+                                df[col] = df[col].astype(bool)
+                                logger.debug("column_type_converted", column=col, to_type="boolean", db_type=db_type)
+
+                            elif db_type in ('timestamp', 'timestamptz', 'date', 'time'):
+                                # Convert to datetime
+                                df[col] = pd.to_datetime(df[col], errors='coerce')
+                                # Replace NaT (Not a Time) with None for asyncpg compatibility
+                                df[col] = df[col].where(pd.notna(df[col]), None)
+                                logger.debug("column_type_converted", column=col, to_type="timestamp", db_type=db_type)
+
+                            else:
+                                # For other types, convert to string as a safe default
+                                logger.warning("unknown_db_type_converting_to_text", column=col, db_type=db_type)
+                                df[col] = df[col].astype(str)
+                                df[col] = df[col].replace('nan', None)
+
+                        except Exception as e:
+                            logger.error(
+                                "column_type_conversion_failed",
+                                column=col,
+                                from_type=str(df[col].dtype),
+                                to_type=db_type,
+                                error=str(e)
+                            )
+                            raise ValueError(
+                                f"Failed to convert column '{col}' from {df[col].dtype} to database type '{db_type}': {str(e)}"
+                            )
+
+            # For UPSERT strategy, ensure unique constraint exists on upsert keys
+            if job.load_strategy == "upsert" and job.upsert_keys:
+                # Check if table has a unique constraint on the upsert keys
+                upsert_keys_list = ', '.join([f"'{key}'" for key in job.upsert_keys])
+                constraint_check_query = f"""
+                    SELECT COUNT(*) as constraint_count
+                    FROM information_schema.table_constraints tc
+                    JOIN information_schema.key_column_usage kcu
+                        ON tc.constraint_name = kcu.constraint_name
+                        AND tc.table_schema = kcu.table_schema
+                    WHERE tc.table_schema = '{schema}'
+                        AND tc.table_name = '{table}'
+                        AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+                        AND kcu.column_name IN ({upsert_keys_list})
+                    GROUP BY tc.constraint_name
+                    HAVING COUNT(DISTINCT kcu.column_name) = {len(job.upsert_keys)}
+                """
+                constraint_exists = await conn.fetchval(constraint_check_query)
+
+                if not constraint_exists:
+                    # Check if columns are marked as primary keys in job configuration
+                    pk_columns = [
+                        mapping.dest_column
+                        for mapping in job.column_mappings
+                        if mapping.is_primary_key and not mapping.exclude
+                    ]
+
+                    # If upsert keys match PK columns in config, automatically add PRIMARY KEY constraint
+                    if set(job.upsert_keys) == set(pk_columns) and pk_columns:
+                        logger.info(
+                            "auto_adding_primary_key_constraint",
+                            table=table,
+                            columns=job.upsert_keys
+                        )
+
+                        try:
+                            # Check if table already has any primary key
+                            existing_pk_query = f"""
+                                SELECT constraint_name
+                                FROM information_schema.table_constraints
+                                WHERE table_schema = '{schema}'
+                                    AND table_name = '{table}'
+                                    AND constraint_type = 'PRIMARY KEY'
+                            """
+                            existing_pk = await conn.fetchval(existing_pk_query)
+
+                            if existing_pk:
+                                # Drop existing primary key first
+                                drop_pk_sql = f'ALTER TABLE "{schema}"."{table}" DROP CONSTRAINT "{existing_pk}"'
+                                await conn.execute(drop_pk_sql)
+                                logger.info("dropped_existing_pk", table=table, constraint=existing_pk)
+
+                            # Add new primary key constraint
+                            pk_columns_quoted = ', '.join([f'"{col}"' for col in job.upsert_keys])
+                            add_pk_sql = f'ALTER TABLE "{schema}"."{table}" ADD PRIMARY KEY ({pk_columns_quoted})'
+                            await conn.execute(add_pk_sql)
+
+                            logger.info(
+                                "primary_key_constraint_added",
+                                table=table,
+                                columns=job.upsert_keys
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "failed_to_add_primary_key",
+                                table=table,
+                                columns=job.upsert_keys,
+                                error=str(e)
+                            )
+                            raise ValueError(
+                                f"Failed to automatically add PRIMARY KEY constraint on {job.upsert_keys}. "
+                                f"Error: {str(e)}. "
+                                f"You may need to manually add it: ALTER TABLE {schema}.{table} ADD PRIMARY KEY ({', '.join(job.upsert_keys)})"
+                            )
+                    else:
+                        # Upsert keys don't match PK config, require manual intervention
+                        logger.error(
+                            "upsert_missing_unique_constraint",
+                            table=table,
+                            upsert_keys=job.upsert_keys,
+                            pk_columns=pk_columns
+                        )
+                        raise ValueError(
+                            f"UPSERT strategy requires a PRIMARY KEY or UNIQUE constraint on the upsert key columns {job.upsert_keys}. "
+                            f"Table '{schema}.{table}' does not have such a constraint. "
+                            f"To fix this:\n"
+                            f"1. Mark the upsert key columns as Primary Keys in the column mapping, OR\n"
+                            f"2. Manually add a constraint: ALTER TABLE {schema}.{table} ADD PRIMARY KEY ({', '.join(job.upsert_keys)}), OR\n"
+                            f"3. Use TRUNCATE_INSERT strategy to recreate the table with proper constraints."
+                        )
+
             # Prepare data for insertion
             total_rows = len(df)
             batch_size = job.batch_size or 10000
@@ -555,35 +803,85 @@ class ETLService:
 
             for start_idx in range(0, total_rows, batch_size):
                 end_idx = min(start_idx + batch_size, total_rows)
-                batch_df = df.iloc[start_idx:end_idx]
+                batch_df = df.iloc[start_idx:end_idx].copy()
 
                 # Convert DataFrame to list of tuples
-                # Replace NaN with None for SQL NULL
+                # Replace NaN and NaT with None for SQL NULL
+                # Use explicit replacement for NaT which .where() doesn't handle properly
+                batch_df = batch_df.replace({pd.NaT: None})
                 batch_df = batch_df.where(pd.notna(batch_df), None)
+
                 records = [tuple(row) for row in batch_df.values]
 
                 try:
                     if job.load_strategy == "upsert" and job.upsert_keys:
-                        # Build upsert query
-                        placeholders = ', '.join([f'${i+1}' for i in range(len(columns))])
+                        # Build upsert query with COALESCE for timestamp defaults
                         upsert_keys_str = ', '.join([f'"{key}"' for key in job.upsert_keys])
 
-                        # Build SET clause for update (exclude upsert keys)
-                        update_columns = [col for col in columns if col not in job.upsert_keys]
-                        set_clause = ', '.join([f'"{col}" = EXCLUDED."{col}"' for col in update_columns])
+                        # Build VALUES clause with COALESCE for timestamp columns
+                        values_clauses = []
+                        for i, col in enumerate(columns):
+                            if col in ('created_at', 'updated_at'):
+                                # Use COALESCE to default NULL to CURRENT_TIMESTAMP on INSERT
+                                values_clauses.append(f'COALESCE(${i+1}, CURRENT_TIMESTAMP)')
+                            else:
+                                values_clauses.append(f'${i+1}')
+                        values_str = ', '.join(values_clauses)
+
+                        # Build SET clause for update
+                        # Exclude: upsert keys (unchangeable), created_at (preserve original)
+                        update_columns = [
+                            col for col in columns
+                            if col not in job.upsert_keys and col != 'created_at'
+                        ]
+
+                        # For updated_at, set to current timestamp only when data actually changes
+                        set_clauses = []
+                        for col in update_columns:
+                            if col == 'updated_at':
+                                # Use CURRENT_TIMESTAMP for updated_at on updates
+                                set_clauses.append(f'"{col}" = CURRENT_TIMESTAMP')
+                            else:
+                                set_clauses.append(f'"{col}" = EXCLUDED."{col}"')
+
+                        set_clause = ', '.join(set_clauses)
 
                         if set_clause:  # Only if there are columns to update
-                            query = f'''
-                                INSERT INTO "{schema}"."{table}" ({column_names_str})
-                                VALUES ({placeholders})
-                                ON CONFLICT ({upsert_keys_str})
-                                DO UPDATE SET {set_clause}
-                            '''
+                            # Build WHERE clause to only update when values actually differ
+                            # Compare all non-timestamp columns (exclude updated_at, created_at, and upsert keys)
+                            comparison_columns = [
+                                col for col in update_columns
+                                if col not in ('updated_at', 'created_at') and col not in job.upsert_keys
+                            ]
+
+                            if comparison_columns:
+                                # Only update if at least one column value is different
+                                where_conditions = []
+                                for col in comparison_columns:
+                                    # Use IS DISTINCT FROM to handle NULL comparisons correctly
+                                    where_conditions.append(f'"{schema}"."{table}"."{col}" IS DISTINCT FROM EXCLUDED."{col}"')
+                                where_clause = ' OR '.join(where_conditions)
+
+                                query = f'''
+                                    INSERT INTO "{schema}"."{table}" ({column_names_str})
+                                    VALUES ({values_str})
+                                    ON CONFLICT ({upsert_keys_str})
+                                    DO UPDATE SET {set_clause}
+                                    WHERE {where_clause}
+                                '''
+                            else:
+                                # No columns to compare (only timestamps), update unconditionally
+                                query = f'''
+                                    INSERT INTO "{schema}"."{table}" ({column_names_str})
+                                    VALUES ({values_str})
+                                    ON CONFLICT ({upsert_keys_str})
+                                    DO UPDATE SET {set_clause}
+                                '''
                         else:
                             # All columns are upsert keys, just do nothing on conflict
                             query = f'''
                                 INSERT INTO "{schema}"."{table}" ({column_names_str})
-                                VALUES ({placeholders})
+                                VALUES ({values_str})
                                 ON CONFLICT ({upsert_keys_str})
                                 DO NOTHING
                             '''

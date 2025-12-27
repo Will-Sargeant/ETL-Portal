@@ -27,8 +27,48 @@ async def create_job(
 ):
     """Create a new ETL job with column mappings."""
     try:
+        # Validate primary key requirements for UPSERT strategy
+        if job.load_strategy == "upsert":
+            # Get primary key columns from column mappings
+            primary_key_columns = [
+                col.destination_column
+                for col in job.column_mappings
+                if col.is_primary_key and not col.exclude and col.destination_column
+            ]
+
+            # UPSERT requires at least one primary key column
+            if not primary_key_columns:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="UPSERT strategy requires at least one column to be marked as a Primary Key. "
+                           "These columns uniquely identify rows for update operations."
+                )
+
+            # Validate upsert keys exist
+            if not job.upsert_keys or len(job.upsert_keys) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="UPSERT strategy requires selecting upsert key columns."
+                )
+
+            # Validate upsert keys are a subset of primary keys
+            invalid_upsert_keys = [
+                key for key in job.upsert_keys
+                if key not in primary_key_columns
+            ]
+
+            if invalid_upsert_keys:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Upsert keys must be marked as Primary Keys. "
+                           f"The following upsert keys are not primary keys: {', '.join(invalid_upsert_keys)}. "
+                           f"Please mark these columns as Primary Keys or select different upsert keys."
+                )
+
         db_job = await crud.create_etl_job(db, job)
         return db_job
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -72,15 +112,86 @@ async def update_job(
     db: AsyncSession = Depends(get_db)
 ):
     """Update an ETL job."""
-    db_job = await crud.update_etl_job(db, job_id, job_update)
+    try:
+        # Validate primary key requirements for UPSERT strategy (if being updated)
+        if job_update.load_strategy == "upsert" or (
+            job_update.column_mappings is not None and job_update.load_strategy is None
+        ):
+            # If column_mappings are being updated, validate them
+            if job_update.column_mappings is not None:
+                # Get primary key columns from column mappings
+                primary_key_columns = [
+                    col.destination_column
+                    for col in job_update.column_mappings
+                    if col.is_primary_key and not col.exclude and col.destination_column
+                ]
 
-    if not db_job:
+                # Check if this is/will be an UPSERT job
+                # Need to check the existing job to see if it's UPSERT
+                existing_job = await crud.get_etl_job(db, job_id)
+                if not existing_job:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="ETL job not found"
+                    )
+
+                # Determine effective load strategy
+                effective_load_strategy = (
+                    job_update.load_strategy if job_update.load_strategy is not None
+                    else existing_job.load_strategy
+                )
+
+                # Validate for UPSERT
+                if effective_load_strategy == "upsert":
+                    if not primary_key_columns:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="UPSERT strategy requires at least one column to be marked as a Primary Key. "
+                                   "These columns uniquely identify rows for update operations."
+                        )
+
+                    # Get effective upsert keys
+                    effective_upsert_keys = (
+                        job_update.upsert_keys if job_update.upsert_keys is not None
+                        else existing_job.upsert_keys
+                    )
+
+                    if not effective_upsert_keys or len(effective_upsert_keys) == 0:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="UPSERT strategy requires selecting upsert key columns."
+                        )
+
+                    # Validate upsert keys are a subset of primary keys
+                    invalid_upsert_keys = [
+                        key for key in effective_upsert_keys
+                        if key not in primary_key_columns
+                    ]
+
+                    if invalid_upsert_keys:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Upsert keys must be marked as Primary Keys. "
+                                   f"The following upsert keys are not primary keys: {', '.join(invalid_upsert_keys)}. "
+                                   f"Please mark these columns as Primary Keys or select different upsert keys."
+                        )
+
+        db_job = await crud.update_etl_job(db, job_id, job_update)
+
+        if not db_job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="ETL job not found"
+            )
+
+        return db_job
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="ETL job not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to update ETL job: {str(e)}"
         )
-
-    return db_job
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)

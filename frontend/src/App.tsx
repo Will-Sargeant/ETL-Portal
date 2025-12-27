@@ -1,11 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'
 import { Toaster } from 'sonner'
-import { Database, Upload, Workflow } from 'lucide-react'
-import { CSVUploadPage } from './pages/CSVUploadPage'
+import { Database, Home, Workflow } from 'lucide-react'
+import { HomePage } from './pages/HomePage'
 import { CredentialsPage } from './pages/CredentialsPage'
 import { ETLJobsPage } from './pages/ETLJobsPage'
 import { JobDetailsPage } from './pages/JobDetailsPage'
 import { UnifiedJobWizardPage } from './pages/UnifiedJobWizardPage'
+import { GoogleCallback } from './pages/GoogleCallback'
 
 function App() {
   return (
@@ -22,8 +23,8 @@ function App() {
                   to="/"
                   className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
                 >
-                  <Upload className="w-4 h-4" />
-                  CSV Upload
+                  <Home className="w-4 h-4" />
+                  Home
                 </Link>
                 <Link
                   to="/credentials"
@@ -45,11 +46,12 @@ function App() {
         </nav>
 
         <Routes>
-          <Route path="/" element={<CSVUploadPage />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/credentials" element={<CredentialsPage />} />
           <Route path="/jobs" element={<ETLJobsPage />} />
           <Route path="/jobs/new" element={<UnifiedJobWizardPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
+          <Route path="/auth/google/callback" element={<GoogleCallback />} />
         </Routes>
         <Toaster />
       </div>

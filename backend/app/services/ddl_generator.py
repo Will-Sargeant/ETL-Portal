@@ -72,8 +72,13 @@ class DDLGenerator:
         cls._validate_identifier(schema, "schema")
         cls._validate_identifier(table, "table")
 
-        # Filter out excluded columns
-        active_columns = [c for c in columns if not c.exclude]
+        # Filter out excluded columns AND auto-generated timestamp columns
+        # Timestamp columns are added automatically by the backend, so they should never be in column mappings
+        auto_generated_columns = {'created_at', 'updated_at', 'inserted_date', 'modified_date'}
+        active_columns = [
+            c for c in columns
+            if not c.exclude and c.destination_column.lower() not in auto_generated_columns
+        ]
 
         # Sort by column_order
         active_columns.sort(key=lambda c: c.column_order)
@@ -84,7 +89,7 @@ class DDLGenerator:
             column_def = cls._build_column_definition(col, db_type)
             column_defs.append(column_def)
 
-        # Add timestamp columns
+        # Add timestamp columns (these are always added by the system)
         column_defs.append(
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL"
         )

@@ -1,18 +1,20 @@
 /**
  * Step 1: Source Selection
- * Upload CSV or connect to Google Sheets (future)
+ * Upload CSV or connect to Google Sheets
  */
 
 import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { InfoIcon } from 'lucide-react'
+import { InfoIcon, CheckCircle2 } from 'lucide-react'
 
 import { CSVUpload } from '@/features/sources/CSVUpload'
 import { DataPreview } from '@/features/sources/DataPreview'
+import { GoogleSheetsOAuth } from '@/features/sources/GoogleSheetsOAuth'
+import { GoogleSheetSelector } from '@/features/sources/GoogleSheetSelector'
 import type { UploadResponse } from '@/types/source'
 import type { WizardState } from './types'
-import { autoPopulateFromCSV } from './utils'
+import { autoPopulateFromCSV, autoPopulateFromGoogleSheets } from './utils'
 
 interface SourceSelectionStepProps {
   state: WizardState
@@ -25,9 +27,25 @@ export function SourceSelectionStep({
   onUpdate,
 }: SourceSelectionStepProps) {
   const [activeTab, setActiveTab] = useState<'csv' | 'google_sheets'>('csv')
+  const [googleCredentials, setGoogleCredentials] = useState<string>('')
 
   const handleUploadSuccess = (data: UploadResponse) => {
     const updates = autoPopulateFromCSV(data)
+    onUpdate(updates)
+  }
+
+  const handleOAuthSuccess = (credentials: string) => {
+    setGoogleCredentials(credentials)
+  }
+
+  const handleSheetSelect = (spreadsheetId: string, sheetName: string, columns: string[]) => {
+    // Auto-populate wizard state from Google Sheets data
+    const updates = autoPopulateFromGoogleSheets(
+      spreadsheetId,
+      sheetName,
+      columns,
+      googleCredentials
+    )
     onUpdate(updates)
   }
 
@@ -43,7 +61,7 @@ export function SourceSelectionStep({
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'csv' | 'google_sheets')}>
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="csv">CSV Upload</TabsTrigger>
-          <TabsTrigger value="google_sheets" disabled>
+          <TabsTrigger value="google_sheets">
             Google Sheets
           </TabsTrigger>
         </TabsList>
@@ -68,13 +86,33 @@ export function SourceSelectionStep({
           )}
         </TabsContent>
 
-        <TabsContent value="google_sheets" className="mt-6">
-          <Alert>
-            <InfoIcon className="h-4 w-4" />
-            <AlertDescription>
-              Google Sheets integration coming soon! For now, please use CSV upload.
-            </AlertDescription>
-          </Alert>
+        <TabsContent value="google_sheets" className="space-y-6 mt-6">
+          {!googleCredentials ? (
+            <div className="space-y-4">
+              <Alert>
+                <InfoIcon className="h-4 w-4" />
+                <AlertDescription>
+                  Connect your Google account to access your spreadsheets. You'll be redirected to Google to authorize access.
+                </AlertDescription>
+              </Alert>
+              <GoogleSheetsOAuth onSuccess={handleOAuthSuccess} />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {state.googleSheetsConfig && (
+                <Alert>
+                  <CheckCircle2 className="h-4 w-4" />
+                  <AlertDescription>
+                    Google Sheet selected! Review the preview below, then proceed to the next step.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <GoogleSheetSelector
+                credentials={googleCredentials}
+                onSelect={handleSheetSelect}
+              />
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
