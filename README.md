@@ -40,6 +40,8 @@ ETL Portal is a web-based platform that enables users to:
 - 📜 **Job Run History** - Complete execution history with logs and metrics
 - 🔍 **Type Inference** - Automatic detection of data types from CSV files and Google Sheets
 - 🎛️ **Schedule Management** - Create, update, enable/disable job schedules with preset cron expressions
+- 🌙 **Dark Mode** - System-aware theme with light/dark/auto modes and localStorage persistence
+- 🔎 **Advanced Filtering** - Filter ETL jobs by status, source type, destination type, and destination table
 
 ---
 
@@ -120,8 +122,10 @@ ETL Portal follows a **microservices architecture** with containerized component
 **Framework**: React 18 + TypeScript
 - **Why**: Type safety, component reusability, strong ecosystem
 - **Build Tool**: Vite - Fast development with HMR (Hot Module Replacement)
-- **UI Library**: shadcn/ui + Tailwind CSS - Modern, accessible components
-- **State Management**: TanStack Query (React Query) - Server state caching and synchronization
+- **UI Library**: shadcn/ui + Tailwind CSS - Modern, accessible components with built-in dark mode
+- **State Management**:
+  - TanStack Query (React Query) - Server state caching and synchronization
+  - Zustand - Lightweight state management for theme and UI state
 - **Routing**: React Router v6 - Client-side routing
 - **Forms**: React Hook Form - Performant form validation
 - **HTTP Client**: Axios - Promise-based HTTP with interceptors
@@ -492,15 +496,17 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
 
 ### Prerequisites
 
-- Docker 20.x+
-- Docker Compose 2.x+
-- 4GB+ RAM for containers
-- 10GB+ disk space
+- **Docker** 20.x+ and **Docker Compose** 2.x+
+- **4GB+ RAM** for containers
+- **10GB+ disk space**
+- **(Optional) Node.js 18+** for frontend development
+- **(Optional) Python 3.11+** for backend development
 
 ### Quick Start
 
 1. **Clone repository**:
    ```bash
+   git clone <repository-url>
    cd "ETL Portal"
    ```
 
@@ -529,10 +535,101 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    docker-compose exec backend alembic upgrade head
    ```
 
+   This will:
+   - Create all database tables
+   - **Automatically seed a "Test Database" credential** for the test-db container
+   - The test credential will appear in the Credentials tab, ready to use
+
 6. **Access application**:
    - Frontend: http://localhost:3000
    - Backend API Docs: http://localhost:8000/docs
    - Airflow UI: http://localhost:8080 (airflow/airflow)
+   - Test Database: Available as **"Test Database"** in Credentials tab
+
+---
+
+### Google Sheets Integration Setup
+
+To enable Google Sheets as a data source, you need to configure Google Cloud OAuth credentials:
+
+#### 1. Create Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the **Google Sheets API**:
+   - Navigate to **APIs & Services** → **Library**
+   - Search for "Google Sheets API"
+   - Click **Enable**
+
+#### 2. Create OAuth Credentials
+
+1. Navigate to **APIs & Services** → **Credentials**
+2. Click **Create Credentials** → **OAuth client ID**
+3. Configure OAuth consent screen if prompted:
+   - User Type: **External** (or Internal for Google Workspace)
+   - Add required scopes:
+     - `https://www.googleapis.com/auth/spreadsheets.readonly`
+     - `https://www.googleapis.com/auth/userinfo.email`
+   - Add test users if in testing mode
+4. Create OAuth Client ID:
+   - Application type: **Web application**
+   - Name: `ETL Portal`
+   - Authorized redirect URIs:
+     ```
+     http://localhost:3000/auth/google/callback
+     ```
+     *(Add production URLs when deploying)*
+
+5. **Download credentials JSON**:
+   - Click the download icon next to your OAuth client
+   - Save as `credentials.json`
+
+#### 3. Configure Backend
+
+1. **Place credentials file**:
+   ```bash
+   mv credentials.json backend/credentials.json
+   ```
+
+2. **Update `.env` file**:
+   ```bash
+   # Google Sheets OAuth
+   GOOGLE_OAUTH_CREDENTIALS_FILE=/app/credentials.json
+   GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/auth/google/callback
+   ```
+
+3. **Restart backend**:
+   ```bash
+   docker-compose restart backend
+   ```
+
+#### 4. Using Google Sheets
+
+1. Navigate to **ETL Jobs** → **Create New Job**
+2. Select **Google Sheets** as source type
+3. Click **Authenticate with Google**
+4. Authorize the application
+5. Enter your Google Sheets URL
+6. Preview data and configure job
+
+**Supported URL formats**:
+```
+https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
+https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={SHEET_ID}
+```
+
+**Features**:
+- Automatic type inference from Google Sheets data
+- Real-time data preview
+- Supports all sheets within a spreadsheet
+- Handles merged cells and formulas
+
+**Limitations**:
+- OAuth tokens expire after 7 days (refresh required)
+- 10MB cell limit per request
+- Read-only access (no write-back support)
+
+---
 
 ### Create Your First ETL Job
 
@@ -540,12 +637,14 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
 2. Upload a CSV file
 3. Review data preview and column types
 4. Click "Configure Job"
-5. Create/select a database credential
+5. Select the **"Test Database"** credential (auto-seeded during setup)
 6. Configure table name and load strategy
 7. Map columns (source → destination)
 8. Add transformations if needed
 9. Click "Create & Execute"
 10. Monitor progress in real-time
+
+**Note**: The "Test Database" credential is automatically created and points to the test-db container (PostgreSQL on port 5433). You can use this for testing without setting up external databases.
 
 ### New Features Guide
 
@@ -609,12 +708,64 @@ import { JobRunHistory } from '@/features/etl-jobs/JobRunHistory'
 ```
 
 **Features**:
-- Filterable table (by job, status)
 - Auto-refresh for active runs (every 3 seconds)
 - Duration calculations
 - Logs viewer with copy functionality
 - Status badges with color coding
-- Delete job runs
+- Delete job runs (with confirmation dialog)
+
+#### Advanced Job Filtering
+
+Filter and search through ETL jobs using multiple criteria:
+
+**Available Filters**:
+- **Status**: Draft, Live, Completed, Paused
+- **Source Type**: CSV, Google Sheets
+- **Destination Type**: PostgreSQL, Redshift
+- **Destination Table**: Searchable dropdown of schema.table names
+
+**Features**:
+- Unified filter popover with all options
+- Searchable table filter (handles thousands of tables)
+- Active filter badges with individual removal
+- "Clear All Filters" button
+- Filter persistence (filters remain visible even when no results match)
+- Server-side status filtering for performance
+- Client-side filtering for source, destination, and table
+
+**Frontend Component**:
+```typescript
+import { JobsList } from '@/features/etl-jobs/JobsList'
+
+<JobsList onViewJob={(jobId) => navigate(`/jobs/${jobId}`)} />
+```
+
+#### Dark Mode
+
+Built-in dark mode support with automatic system preference detection:
+
+**Features**:
+- **Three theme modes**: Light, Dark, System (auto-detects OS preference)
+- **localStorage persistence**: Theme preference saved across sessions
+- **Smooth transitions**: 200ms animated theme switching
+- **No flash on load**: Blocking script prevents wrong theme flash
+- **Animated toggle**: Sun/Moon icon with smooth rotation animation
+- **Keyboard accessible**: Full ARIA support and screen reader friendly
+
+**Theme Toggle Location**: Top-right corner of navigation bar
+
+**How it works**:
+1. On first visit, defaults to system preference (light/dark based on OS)
+2. Click sun/moon icon to toggle between light and dark
+3. Theme preference saved to localStorage
+4. Persists across page refreshes and browser sessions
+5. Automatically updates when OS theme changes (if using system mode)
+
+**Technical Implementation**:
+- Zustand store for state management with persist middleware
+- Tailwind CSS class-based dark mode (`dark:` variants)
+- CSS custom properties for semantic color tokens
+- All shadcn/ui components automatically support dark mode
 
 #### Schedule Management
 
@@ -988,18 +1139,20 @@ docker-compose exec airflow-worker airflow dags unpause etl_job_executor
 ✅ Type conversion via column mapping (removed redundant transformation functions)
 ✅ Job execution via Airflow
 ✅ Real-time progress monitoring (SSE)
-✅ Job run history with filtering and logs
+✅ Job run history with logs viewer
 ✅ Job scheduling (cron-based with Airflow DAG generation)
 ✅ All load strategies (INSERT, UPSERT, TRUNCATE_INSERT)
 ✅ DDL auto-generation
 ✅ Batch processing
 ✅ Error handling and structured logging
 ✅ Metabase integration for data visualization
+✅ Dark mode with system preference detection
+✅ Advanced job filtering (status, source, destination, table)
+✅ Searchable table filter for large datasets
 
 ### In Progress
 
-🔄 Enhanced UI/UX improvements
-🔄 Additional data source connectors
+🔄 Additional data source connectors (APIs, databases)
 
 ### Planned
 
