@@ -8,40 +8,47 @@ import { JobDetailsPage } from './pages/JobDetailsPage'
 import { JobEditPage } from './pages/JobEditPage'
 import { UnifiedJobWizardPage } from './pages/UnifiedJobWizardPage'
 import { GoogleCallback } from './pages/GoogleCallback'
+import { useTheme } from './hooks/useTheme'
+import { ThemeToggle } from './components/ThemeToggle'
 
 function App() {
+  useTheme() // Initialize theme system
+
   return (
     <Router>
       <div className="min-h-screen bg-background">
         <nav className="border-b">
           <div className="container mx-auto px-4">
-            <div className="flex items-center gap-6 h-16">
-              <Link to="/" className="font-bold text-xl">
-                ETL Portal
-              </Link>
-              <div className="flex gap-4">
-                <Link
-                  to="/"
-                  className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                >
-                  <Home className="w-4 h-4" />
-                  Home
+            <div className="flex items-center justify-between h-16">
+              <div className="flex items-center gap-6">
+                <Link to="/" className="font-bold text-xl">
+                  ETL Portal
                 </Link>
-                <Link
-                  to="/credentials"
-                  className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                >
-                  <Database className="w-4 h-4" />
-                  Credentials
-                </Link>
-                <Link
-                  to="/jobs"
-                  className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                >
-                  <Workflow className="w-4 h-4" />
-                  ETL Jobs
-                </Link>
+                <div className="flex gap-4">
+                  <Link
+                    to="/"
+                    className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                  >
+                    <Home className="w-4 h-4" />
+                    Home
+                  </Link>
+                  <Link
+                    to="/credentials"
+                    className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                  >
+                    <Database className="w-4 h-4" />
+                    Credentials
+                  </Link>
+                  <Link
+                    to="/jobs"
+                    className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                  >
+                    <Workflow className="w-4 h-4" />
+                    ETL Jobs
+                  </Link>
+                </div>
               </div>
+              <ThemeToggle />
             </div>
           </div>
         </nav>

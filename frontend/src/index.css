@@ -56,4 +56,11 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Smooth theme transitions */
+  html * {
+    transition: background-color 200ms ease-in-out,
+                border-color 200ms ease-in-out,
+                color 200ms ease-in-out;
+  }
 }
