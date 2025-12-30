@@ -89,6 +89,7 @@ export interface ETLJobListItem {
   description?: string
   source_type: SourceType
   destination_type: DestinationType
+  destination_config?: Record<string, any>
   status: JobStatus
   is_paused: boolean
   created_at: string

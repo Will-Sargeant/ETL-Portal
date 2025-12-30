@@ -195,6 +195,7 @@ class ETLJobListResponse(BaseModel):
     description: Optional[str]
     source_type: SourceType
     destination_type: DestinationType
+    destination_config: Dict[str, Any]
     status: JobStatus
     is_paused: bool = False
     created_at: datetime

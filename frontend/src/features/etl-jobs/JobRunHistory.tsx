@@ -9,8 +9,8 @@ import {
   Trash2,
   FileText,
   RefreshCw,
-  Filter,
-  AlertTriangle
+  AlertTriangle,
+  Pause
 } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
@@ -34,14 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { jobRunsApi, type JobRunFilters } from '@/lib/api/job-runs'
+import { jobRunsApi } from '@/lib/api/job-runs'
 import type { JobRunResponse } from '@/types/schedule'
 
 interface JobRunHistoryProps {
@@ -75,11 +68,20 @@ const STATUS_CONFIG = {
     color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
     label: 'Retrying',
   },
+  cancelled: {
+    icon: XCircle,
+    color: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+    label: 'Cancelled',
+  },
+  paused: {
+    icon: Pause,
+    color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    label: 'Paused',
+  },
 }
 
 export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps) {
   const queryClient = useQueryClient()
-  const [filters, setFilters] = useState<JobRunFilters>({ job_id: jobId, limit: 50 })
   const [selectedRun, setSelectedRun] = useState<number | null>(null)
   const [showLogsDialog, setShowLogsDialog] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -90,8 +92,8 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
   } | null>(null)
 
   const { data: jobRuns, isLoading, refetch } = useQuery({
-    queryKey: ['job-runs', filters],
-    queryFn: () => jobRunsApi.list(filters),
+    queryKey: ['job-runs', jobId],
+    queryFn: () => jobRunsApi.list({ job_id: jobId, limit: 50 }),
     refetchInterval: (query) => {
       // Auto-refresh if any runs are in pending, running, or retrying state
       const hasActiveRuns = Array.isArray(query.state.data) && query.state.data.some(run =>
@@ -140,13 +142,6 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
   const handleViewLogs = (runId: number) => {
     setSelectedRun(runId)
     setShowLogsDialog(true)
-  }
-
-  const handleStatusFilter = (status: string) => {
-    setFilters(prev => ({
-      ...prev,
-      status: status === 'all' ? undefined : status as JobRunFilters['status'],
-    }))
   }
 
   const calculateDuration = (run: JobRunResponse) => {
@@ -201,30 +196,14 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
                   : 'View all job executions across the system'}
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
-              <Select onValueChange={handleStatusFilter} defaultValue="all">
-                <SelectTrigger className="w-[140px]">
-                  <Filter className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Filter status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="running">Running</SelectItem>
-                  <SelectItem value="retrying">Retrying</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => refetch()}
-                title="Refresh"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              title="Refresh"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
           </div>
         </CardHeader>
         <CardContent>

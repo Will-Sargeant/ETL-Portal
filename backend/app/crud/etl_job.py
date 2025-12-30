@@ -280,9 +280,6 @@ async def get_etl_jobs(
         .order_by(ETLJob.created_at.desc())
     )
 
-    if status:
-        query = query.where(ETLJob.status == status)
-
     result = await db.execute(query)
 
     # Attach last_executed_at and compute status for each job
@@ -311,6 +308,10 @@ async def get_etl_jobs(
                 job.status = "completed"
             else:
                 job.status = "draft"
+
+        # Apply status filter AFTER computing status
+        if status and job.status != status:
+            continue
 
         jobs.append(job)
 
