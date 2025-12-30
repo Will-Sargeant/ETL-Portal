@@ -17,13 +17,12 @@ interface CronScheduleBuilderProps {
   onChange: (config: ScheduleConfig | null) => void
 }
 
-type PresetType = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom' | 'none'
+type PresetType = 'every_4_hours' | 'daily' | 'weekly' | 'custom' | 'none'
 
 const PRESETS: Record<Exclude<PresetType, 'custom' | 'none'>, { cron: string; description: string }> = {
-  hourly: { cron: '0 * * * *', description: 'Every hour at minute 0' },
+  every_4_hours: { cron: '0 */4 * * *', description: 'Every 4 hours' },
   daily: { cron: '0 0 * * *', description: 'Every day at midnight' },
-  weekly: { cron: '0 0 * * 0', description: 'Every Sunday at midnight' },
-  monthly: { cron: '0 0 1 * *', description: 'First day of every month at midnight' },
+  weekly: { cron: '0 9 * * 1', description: 'Every Monday at 9 AM' },
 }
 
 export function CronScheduleBuilder({ value, onChange }: CronScheduleBuilderProps) {
@@ -68,28 +67,22 @@ export function CronScheduleBuilder({ value, onChange }: CronScheduleBuilderProp
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="none">No Schedule (Run Manually)</SelectItem>
-            <SelectItem value="hourly">
+            <SelectItem value="every_4_hours">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                Hourly
+                Every 4 hours
               </div>
             </SelectItem>
             <SelectItem value="daily">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                Daily
+                Daily (midnight)
               </div>
             </SelectItem>
             <SelectItem value="weekly">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                Weekly
-              </div>
-            </SelectItem>
-            <SelectItem value="monthly">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                Monthly
+                Weekly (Monday 9 AM)
               </div>
             </SelectItem>
             <SelectItem value="custom">Custom Cron Expression</SelectItem>

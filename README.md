@@ -550,84 +550,77 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
 
 ### Google Sheets Integration Setup
 
-To enable Google Sheets as a data source, you need to configure Google Cloud OAuth credentials:
+To enable Google Sheets as a data source, configure Google Cloud OAuth 2.0 credentials. This is a **one-time admin setup** - once configured, all users can connect their personal Google accounts.
 
-#### 1. Create Google Cloud Project
+#### 1. Create Google Cloud Project & Enable APIs
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Enable the **Google Sheets API**:
-   - Navigate to **APIs & Services** → **Library**
-   - Search for "Google Sheets API"
-   - Click **Enable**
+2. Create a new project (e.g., "ETL Portal")
+3. Enable required APIs:
+   - **Google Sheets API**: APIs & Services → Library → Search "Google Sheets API" → Enable
+   - **Google Drive API**: APIs & Services → Library → Search "Google Drive API" → Enable
 
-#### 2. Create OAuth Credentials
+#### 2. Configure OAuth Consent Screen
+
+1. Navigate to **APIs & Services** → **OAuth consent screen**
+2. Select **Internal** (for Google Workspace) or **External**
+3. Fill in app information:
+   - **App name**: ETL Portal
+   - **User support email**: Your email
+   - **Developer contact**: Your email
+4. Add scopes:
+   - `https://www.googleapis.com/auth/spreadsheets.readonly`
+   - `https://www.googleapis.com/auth/drive.readonly`
+5. Add test users if using External mode
+6. Save and continue
+
+#### 3. Create OAuth Client Credentials
 
 1. Navigate to **APIs & Services** → **Credentials**
-2. Click **Create Credentials** → **OAuth client ID**
-3. Configure OAuth consent screen if prompted:
-   - User Type: **External** (or Internal for Google Workspace)
-   - Add required scopes:
-     - `https://www.googleapis.com/auth/spreadsheets.readonly`
-     - `https://www.googleapis.com/auth/userinfo.email`
-   - Add test users if in testing mode
-4. Create OAuth Client ID:
-   - Application type: **Web application**
-   - Name: `ETL Portal`
-   - Authorized redirect URIs:
-     ```
-     http://localhost:3000/auth/google/callback
-     ```
-     *(Add production URLs when deploying)*
-
-5. **Download credentials JSON**:
-   - Click the download icon next to your OAuth client
-   - Save as `credentials.json`
-
-#### 3. Configure Backend
-
-1. **Place credentials file**:
-   ```bash
-   mv credentials.json backend/credentials.json
+2. Click **Create Credentials** → **OAuth 2.0 Client ID**
+3. Select **Web application**
+4. Add authorized redirect URI:
    ```
-
-2. **Update `.env` file**:
-   ```bash
-   # Google Sheets OAuth
-   GOOGLE_OAUTH_CREDENTIALS_FILE=/app/credentials.json
-   GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/auth/google/callback
+   http://localhost:3000/auth/google/callback
    ```
+   *(Add production URLs like `https://etl.yourcompany.com/auth/google/callback` when deploying)*
+5. Click **Create**
+6. **Copy the Client ID and Client Secret** (you'll need these next)
 
-3. **Restart backend**:
+#### 4. Configure ETL Portal
+
+1. Open `.env` file in the project root
+2. Add Google OAuth credentials:
+   ```bash
+   # Google OAuth Configuration
+   GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret-here
+   GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
+   ```
+3. Restart backend:
    ```bash
    docker-compose restart backend
    ```
 
-#### 4. Using Google Sheets
+#### 5. Using Google Sheets
+
+Once configured, users can:
 
 1. Navigate to **ETL Jobs** → **Create New Job**
-2. Select **Google Sheets** as source type
-3. Click **Authenticate with Google**
-4. Authorize the application
-5. Enter your Google Sheets URL
-6. Preview data and configure job
+2. Click the **Google Sheets** tab
+3. Click **Connect Google Sheets**
+4. Sign in with **their own** Google account (popup window)
+5. Grant permission to access spreadsheets
+6. Select spreadsheet and sheet from the list
+7. Preview data and configure the job
 
-**Supported URL formats**:
-```
-https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
-https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={SHEET_ID}
-```
+**Key Points**:
+- Each user connects their own Google account (individual OAuth)
+- Users can only access their own spreadsheets
+- Credentials are encrypted and stored per-job
+- Automatic type inference and real-time preview
 
-**Features**:
-- Automatic type inference from Google Sheets data
-- Real-time data preview
-- Supports all sheets within a spreadsheet
-- Handles merged cells and formulas
-
-**Limitations**:
-- OAuth tokens expire after 7 days (refresh required)
-- 10MB cell limit per request
-- Read-only access (no write-back support)
+**For detailed setup instructions**, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md)
 
 ---
 
@@ -805,9 +798,7 @@ import { ScheduleManager } from '@/features/etl-jobs/ScheduleManager'
 ```
 
 **Cron Expression Presets**:
-- Every minute: `* * * * *`
-- Every 5 minutes: `*/5 * * * *`
-- Every hour: `0 * * * *`
+- Every 4 hours: `0 */4 * * *`
 - Every day at midnight: `0 0 * * *`
 - Every Monday at 9 AM: `0 9 * * 1`
 - Custom expressions supported
