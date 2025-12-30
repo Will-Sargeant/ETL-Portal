@@ -1,9 +1,9 @@
 /**
  * Unified ETL Job Wizard - Main Component
- * Orchestrates the multi-step wizard for creating ETL jobs
+ * Orchestrates the multi-step wizard for creating or editing ETL jobs
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -28,11 +28,79 @@ import {
 } from './types'
 import { getStepValidator } from './validation'
 import { buildJobPayload } from './utils'
+import type { ETLJob } from '@/types/etl-job'
 
-export function UnifiedJobWizard() {
+interface UnifiedJobWizardProps {
+  existingJob?: ETLJob
+  mode?: 'create' | 'edit'
+}
+
+export function UnifiedJobWizard({ existingJob, mode = 'create' }: UnifiedJobWizardProps = {}) {
   const navigate = useNavigate()
   const [state, setState] = useState<WizardState>(INITIAL_WIZARD_STATE)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const isEditMode = mode === 'edit' && !!existingJob
+
+  // Pre-populate state from existing job in edit mode
+  useEffect(() => {
+    if (isEditMode && existingJob) {
+      // Convert existing job to wizard state
+      const editState: Partial<WizardState> = {
+        currentStep: 1, // Start at Job Details (skip source selection)
+        jobName: existingJob.name,
+        jobDescription: existingJob.description || '',
+        sourceType: existingJob.source_type,
+        sourceConfig: existingJob.source_config,
+        googleSheetsConfig: existingJob.source_type === 'google_sheets' ? existingJob.source_config : undefined,
+        destinationType: existingJob.destination_type,
+        destinationConfig: {
+          credentialId: existingJob.destination_config?.credential_id,
+          schema: existingJob.destination_config?.schema || '',
+          tableName: existingJob.destination_config?.table || existingJob.destination_config?.table_name || '',
+          loadStrategy: existingJob.load_strategy,
+          createNewTable: existingJob.create_new_table || false,
+          newTableDDL: existingJob.new_table_ddl,
+          upsertKeys: existingJob.upsert_keys || [],
+        },
+        loadStrategy: existingJob.load_strategy,
+        batchSize: existingJob.batch_size || 10000,
+        columnMappings: (existingJob.column_mappings || []).map((cm) => ({
+          sourceColumn: cm.source_column || '',
+          destinationColumn: cm.destination_column || '',
+          sourceType: cm.source_type || 'TEXT',
+          destinationType: cm.destination_type || 'TEXT',
+          transformations: cm.transformations || [],
+          isNullable: cm.is_nullable ?? true,
+          defaultValue: cm.default_value,
+          exclude: cm.exclude ?? false,
+          columnOrder: cm.column_order ?? 0,
+          isPrimaryKey: cm.is_primary_key ?? false,
+        })),
+        schedule: existingJob.schedule ? {
+          cronExpression: existingJob.schedule.cron_expression,
+          enabled: existingJob.schedule.enabled,
+        } : null,
+      }
+
+      setState((prev) => ({ ...prev, ...editState }))
+    }
+  }, [isEditMode, existingJob])
+
+  // Mutation for updating the job (edit mode)
+  const updateJobMutation = useMutation({
+    mutationFn: (payload: ReturnType<typeof buildJobPayload>) => {
+      if (!existingJob) throw new Error('No existing job to update')
+      return etlJobsApi.update(existingJob.id, payload)
+    },
+    onSuccess: (job) => {
+      toast.success(`Job "${job.name}" updated successfully!`)
+      navigate(`/jobs/${job.id}`)
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.detail || 'Failed to update job'
+      toast.error(message)
+    },
+  })
 
   // Mutation for creating the job
   const createJobMutation = useMutation({
@@ -105,7 +173,9 @@ export function UnifiedJobWizard() {
   }
 
   const handleBack = () => {
-    if (state.currentStep > 0) {
+    // In edit mode, don't allow going back to step 0 (source selection)
+    const minStep = isEditMode ? 1 : 0
+    if (state.currentStep > minStep) {
       setState((prev) => ({
         ...prev,
         currentStep: prev.currentStep - 1,
@@ -149,18 +219,31 @@ export function UnifiedJobWizard() {
     }
 
     const payload = buildJobPayload(state)
-    createJobMutation.mutate(payload)
+
+    // Use update mutation in edit mode, create mutation in create mode
+    if (isEditMode) {
+      updateJobMutation.mutate(payload)
+    } else {
+      createJobMutation.mutate(payload)
+    }
   }
 
   const handleSaveAndExecute = async () => {
     // Validate all required steps
     if (!validateCurrentStep()) {
-      toast.error('Please fix the errors before creating the job')
+      toast.error(`Please fix the errors before ${isEditMode ? 'saving' : 'creating'} the job`)
       return
     }
 
     const payload = buildJobPayload(state)
-    createAndExecuteMutation.mutate(payload)
+
+    // In edit mode, just save (can't execute during edit)
+    // In create mode, create and execute
+    if (isEditMode) {
+      updateJobMutation.mutate(payload)
+    } else {
+      createAndExecuteMutation.mutate(payload)
+    }
   }
 
   // Render the current step
@@ -190,15 +273,18 @@ export function UnifiedJobWizard() {
   }
 
   const currentStepConfig = WIZARD_STEPS[state.currentStep]
-  const isFirstStep = state.currentStep === 0
+  const isFirstStep = isEditMode ? state.currentStep === 1 : state.currentStep === 0
   const isLastStep = state.currentStep === WIZARD_STEPS.length - 1
-  const isLoading = createJobMutation.isPending || createAndExecuteMutation.isPending
+  const isLoading = createJobMutation.isPending || createAndExecuteMutation.isPending || updateJobMutation.isPending
+
+  // Filter out source selection step in edit mode (can't change source)
+  const visibleSteps = isEditMode ? WIZARD_STEPS.filter(step => step.id !== 0) : WIZARD_STEPS
 
   return (
     <div className="space-y-8">
       {/* Step Indicator */}
       <WizardStepIndicator
-        steps={WIZARD_STEPS}
+        steps={visibleSteps}
         currentStep={state.currentStep}
         completedSteps={state.completedSteps}
         onStepClick={handleStepClick}
@@ -259,23 +345,38 @@ export function UnifiedJobWizard() {
             </Button>
           ) : (
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={handleSaveDraft}
-                disabled={isLoading}
-                className="gap-2"
-              >
-                <Save className="w-4 h-4" />
-                Save as Draft
-              </Button>
-              <Button
-                onClick={handleSaveAndExecute}
-                disabled={isLoading}
-                className="gap-2"
-              >
-                <Play className="w-4 h-4" />
-                {isLoading ? 'Creating...' : 'Save & Execute Now'}
-              </Button>
+              {isEditMode ? (
+                // Edit mode: Only show Save Changes button
+                <Button
+                  onClick={handleSaveDraft}
+                  disabled={isLoading}
+                  className="gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  {isLoading ? 'Saving...' : 'Save Changes'}
+                </Button>
+              ) : (
+                // Create mode: Show both Save as Draft and Save & Execute
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveDraft}
+                    disabled={isLoading}
+                    className="gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save as Draft
+                  </Button>
+                  <Button
+                    onClick={handleSaveAndExecute}
+                    disabled={isLoading}
+                    className="gap-2"
+                  >
+                    <Play className="w-4 h-4" />
+                    {isLoading ? 'Creating...' : 'Save & Execute Now'}
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>

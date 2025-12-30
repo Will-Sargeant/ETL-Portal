@@ -31,6 +31,12 @@ class PreviewSheetRequest(BaseModel):
     spreadsheet_id: str
     sheet_name: str
     encrypted_credentials: str
+    # Range configuration (optional)
+    start_row: int = 1
+    header_row: int | None = None
+    end_row: int | None = None
+    start_column: str = 'A'
+    end_column: str | None = None
 
 
 @router.post("/spreadsheets")
@@ -120,7 +126,12 @@ async def preview_sheet_data(request: PreviewSheetRequest):
             spreadsheet_id=request.spreadsheet_id,
             sheet_name=request.sheet_name,
             credentials_dict=credentials,
-            max_rows=100
+            max_rows=100,
+            start_row=request.start_row,
+            header_row=request.header_row,
+            end_row=request.end_row,
+            start_column=request.start_column,
+            end_column=request.end_column
         )
 
         return {

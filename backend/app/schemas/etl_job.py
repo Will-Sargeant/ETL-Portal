@@ -154,6 +154,16 @@ class ETLJobUpdate(BaseModel):
     batch_size: Optional[int] = Field(None, ge=100, le=100000)
     status: Optional[JobStatus] = None
 
+    # Column mappings
+    column_mappings: Optional[List[ColumnMappingCreate]] = Field(None, description="Column mappings")
+
+    # Optional schedule
+    schedule: Optional[ScheduleCreate] = Field(None, description="Optional job schedule")
+
+    # New table creation
+    create_new_table: Optional[bool] = Field(None, description="Create new destination table")
+    new_table_ddl: Optional[str] = Field(None, description="DDL for creating new table")
+
 
 class ETLJobResponse(BaseModel):
     """Schema for ETL job response."""

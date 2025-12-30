@@ -130,38 +130,6 @@ class TransformationService:
             'params': []
         },
 
-        # Type Conversions
-        'TO_STRING': {
-            'func': lambda x: x.astype(str),
-            'description': 'Convert to text',
-            'category': 'conversion',
-            'params': []
-        },
-        'TO_INT': {
-            'func': lambda x: pd.to_numeric(x, errors='coerce').astype('Int64'),
-            'description': 'Convert to integer',
-            'category': 'conversion',
-            'params': []
-        },
-        'TO_FLOAT': {
-            'func': lambda x: pd.to_numeric(x, errors='coerce'),
-            'description': 'Convert to decimal number',
-            'category': 'conversion',
-            'params': []
-        },
-        'TO_DATE': {
-            'func': lambda x: pd.to_datetime(x, errors='coerce'),
-            'description': 'Convert to date/time',
-            'category': 'conversion',
-            'params': []
-        },
-        'TO_BOOLEAN': {
-            'func': lambda x: x.astype(bool),
-            'description': 'Convert to true/false',
-            'category': 'conversion',
-            'params': []
-        },
-
         # Null Handling
         'FILL_NULL': {
             'func': lambda x: x.fillna(''),

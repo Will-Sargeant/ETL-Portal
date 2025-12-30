@@ -206,20 +206,37 @@ class ETLService:
                 "'spreadsheet_id', and 'sheet_name'"
             )
 
+        # Extract optional range configuration
+        start_row = source_config.get('start_row', 1)
+        header_row = source_config.get('header_row')
+        end_row = source_config.get('end_row')
+        start_column = source_config.get('start_column', 'A')
+        end_column = source_config.get('end_column')
+
         logger.info(
             "reading_google_sheets",
             spreadsheet_id=spreadsheet_id,
-            sheet_name=sheet_name
+            sheet_name=sheet_name,
+            start_row=start_row,
+            header_row=header_row,
+            end_row=end_row,
+            start_column=start_column,
+            end_column=end_column
         )
 
         # Decrypt credentials
         credentials = decrypt_credentials(encrypted_credentials)
 
-        # Fetch data from Google Sheets
+        # Fetch data from Google Sheets with optional range
         df = await google_sheets_service.get_sheet_data(
             spreadsheet_id=spreadsheet_id,
             sheet_name=sheet_name,
-            credentials_dict=credentials
+            credentials_dict=credentials,
+            start_row=start_row,
+            header_row=header_row,
+            end_row=end_row,
+            start_column=start_column,
+            end_column=end_column
         )
 
         logger.info(

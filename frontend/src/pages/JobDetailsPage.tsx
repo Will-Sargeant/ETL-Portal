@@ -24,8 +24,7 @@ import { etlJobsApi } from '@/lib/api/etl-jobs'
 import { JobRunHistory } from '@/features/etl-jobs/JobRunHistory'
 import { JobRunProgress } from '@/features/etl-jobs/JobRunProgress'
 import { ScheduleManager } from '@/features/etl-jobs/ScheduleManager'
-import { JobEditor } from '@/features/etl-jobs/JobEditor'
-import { CSVPreviewTab } from '@/features/etl-jobs/CSVPreviewTab'
+import { SourcePreviewTab } from '@/features/etl-jobs/SourcePreviewTab'
 import { ColumnMappingsEditor } from '@/features/etl-jobs/ColumnMappingsEditor'
 import type { JobStatus } from '@/types/etl-job'
 
@@ -33,7 +32,6 @@ export function JobDetailsPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [isEditing, setIsEditing] = useState(false)
 
   const { data: job, isLoading } = useQuery({
     queryKey: ['etl-job', jobId],
@@ -174,15 +172,14 @@ export function JobDetailsPage() {
           </div>
 
           <div className="flex gap-2">
-            {!isEditing && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsEditing(true)}
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Job
-                </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/jobs/${jobId}/edit`)}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Edit Job
+              </Button>
                 {job.is_paused ? (
                   <Button
                     variant="outline"
@@ -220,21 +217,11 @@ export function JobDetailsPage() {
                   Delete
                 </Button>
               </>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Edit Mode or View Mode */}
-      {isEditing ? (
-        <JobEditor
-          job={job}
-          onCancel={() => setIsEditing(false)}
-          onSave={() => setIsEditing(false)}
-        />
-      ) : (
-        <>
-          {/* Job Info Card */}
+      {/* Job Info Card */}
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>Job Configuration</CardTitle>
@@ -319,7 +306,7 @@ export function JobDetailsPage() {
               </TabsTrigger>
               <TabsTrigger value="preview">
                 <FileText className="w-4 h-4 mr-2" />
-                CSV Preview
+                {job.source_type === 'google_sheets' ? 'Google Sheets Preview' : 'CSV Preview'}
               </TabsTrigger>
               <TabsTrigger value="settings">
                 <Settings className="w-4 h-4 mr-2" />
@@ -354,15 +341,13 @@ export function JobDetailsPage() {
             </TabsContent>
 
             <TabsContent value="preview" className="space-y-4">
-              <CSVPreviewTab job={job} />
+              <SourcePreviewTab job={job} />
             </TabsContent>
 
             <TabsContent value="settings" className="space-y-4">
               <ColumnMappingsEditor job={job} />
             </TabsContent>
           </Tabs>
-        </>
-      )}
     </div>
   )
 }

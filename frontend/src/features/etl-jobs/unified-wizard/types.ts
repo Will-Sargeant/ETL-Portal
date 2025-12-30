@@ -39,6 +39,12 @@ export interface GoogleSheetsConfig {
   encrypted_credentials: string
   spreadsheet_id: string
   sheet_name: string
+  // Range configuration (optional)
+  start_row?: number           // First row to read (1-indexed, defaults to 1)
+  header_row?: number          // Row containing headers (1-indexed, defaults to start_row)
+  end_row?: number             // Last row to read (optional, defaults to all rows)
+  start_column?: string        // First column (A, B, C, etc., defaults to A)
+  end_column?: string          // Last column (optional, defaults to all columns)
 }
 
 /**

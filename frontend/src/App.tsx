@@ -5,6 +5,7 @@ import { HomePage } from './pages/HomePage'
 import { CredentialsPage } from './pages/CredentialsPage'
 import { ETLJobsPage } from './pages/ETLJobsPage'
 import { JobDetailsPage } from './pages/JobDetailsPage'
+import { JobEditPage } from './pages/JobEditPage'
 import { UnifiedJobWizardPage } from './pages/UnifiedJobWizardPage'
 import { GoogleCallback } from './pages/GoogleCallback'
 
@@ -51,6 +52,7 @@ function App() {
           <Route path="/jobs" element={<ETLJobsPage />} />
           <Route path="/jobs/new" element={<UnifiedJobWizardPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
+          <Route path="/jobs/:jobId/edit" element={<JobEditPage />} />
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
         </Routes>
         <Toaster />

@@ -38,13 +38,25 @@ export function SourceSelectionStep({
     setGoogleCredentials(credentials)
   }
 
-  const handleSheetSelect = (spreadsheetId: string, sheetName: string, columns: string[]) => {
+  const handleSheetSelect = (
+    spreadsheetId: string,
+    sheetName: string,
+    columns: string[],
+    rangeConfig?: {
+      start_row?: number
+      header_row?: number
+      end_row?: number
+      start_column?: string
+      end_column?: string
+    }
+  ) => {
     // Auto-populate wizard state from Google Sheets data
     const updates = autoPopulateFromGoogleSheets(
       spreadsheetId,
       sheetName,
       columns,
-      googleCredentials
+      googleCredentials,
+      rangeConfig
     )
     onUpdate(updates)
   }

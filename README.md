@@ -20,8 +20,8 @@ A modern, self-hosted ETL (Extract, Transform, Load) platform for automating dat
 
 ETL Portal is a web-based platform that enables users to:
 
-- **Upload CSV files** and preview data with automatic type inference
-- **Configure data transformations** with visual column mapping
+- **Upload CSV files or connect to Google Sheets** and preview data with automatic type inference
+- **Configure data transformations** with visual column mapping and nullable controls
 - **Connect to databases** (PostgreSQL, Amazon Redshift) with encrypted credential storage
 - **Execute ETL jobs** on-demand or on a schedule via Apache Airflow
 - **Monitor job progress** with real-time status updates
@@ -31,13 +31,14 @@ ETL Portal is a web-based platform that enables users to:
 
 - 🔐 **Secure Credential Management** - AES-256 encrypted database credentials
 - 🔄 **Multiple Load Strategies** - INSERT, UPSERT, TRUNCATE_INSERT
-- 📊 **Data Preview** - View and analyze CSV data before processing
-- 🎯 **Column Mapping** - Visual interface for mapping source to destination columns
-- 🔧 **Data Transformations** - Built-in functions (UPPER, LOWER, TRIM) and calculated columns
+- 📊 **Data Preview** - View and analyze CSV and Google Sheets data before processing
+- 📑 **Google Sheets Integration** - Direct connection to Google Sheets with OAuth authentication
+- 🎯 **Column Mapping** - Visual interface for mapping source to destination columns with nullable configuration
+- 🔧 **Data Transformations** - Built-in functions for string, date, numeric, and null handling operations
 - ⏰ **Job Scheduling** - Cron-based scheduling with automatic Airflow DAG generation
 - 📈 **Real-time Progress Tracking** - Server-Sent Events (SSE) for live job monitoring
 - 📜 **Job Run History** - Complete execution history with logs and metrics
-- 🔍 **Type Inference** - Automatic detection of data types from CSV files
+- 🔍 **Type Inference** - Automatic detection of data types from CSV files and Google Sheets
 - 🎛️ **Schedule Management** - Create, update, enable/disable job schedules with preset cron expressions
 
 ---
@@ -61,29 +62,35 @@ ETL Portal follows a **microservices architecture** with containerized component
                     │  FastAPI        │
                     │  Backend        │
                     │  Port: 8000     │
-                    └─────┬───┬───┬───┘
-                          │   │   │
-        ┌─────────────────┘   │   └─────────────────┐
-        │                     │                     │
-┌───────▼────────┐   ┌────────▼────────┐   ┌───────▼────────┐
-│   PostgreSQL   │   │  Apache Airflow │   │     Redis      │
-│  App Database  │   │  (Orchestrator) │   │    (Cache)     │
-│  Port: 5432    │   │                 │   │  Port: 6379    │
-└────────────────┘   └────────┬────────┘   └────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-            ┌───────▼────────┐  ┌───────▼────────┐
-            │ Airflow Worker │  │  Airflow DB    │
-            │  (Executes     │  │  (Metadata)    │
-            │   ETL Jobs)    │  │                │
-            └────────┬───────┘  └────────────────┘
+                    └─────┬───┬───┬───┬──────┐
+                          │   │   │   │      │
+        ┌─────────────────┘   │   │   │      └──────────────┐
+        │                     │   │   │                     │
+┌───────▼────────┐   ┌────────▼───┴───▼────────┐   ┌───────▼────────┐
+│   PostgreSQL   │   │  Apache Airflow          │   │     Redis      │
+│ ETL Portal DB  │   │  (Orchestrator)          │   │    (Cache)     │
+│  Port: 5432    │   │                          │   │  Port: 6379    │
+└────────────────┘   └────────┬────────┬────────┘   └────────────────┘
+                              │        │
+                    ┌─────────┴────┐   │
+                    │              │   │
+            ┌───────▼────────┐ ┌──▼───▼──────┐
+            │ Airflow Worker │ │  Airflow DB │
+            │  (Executes     │ │  (Metadata) │
+            │   ETL Jobs)    │ │             │
+            └────────┬───────┘ └─────────────┘
                      │
             ┌────────▼────────┐
-            │  Destination    │
-            │   Database      │
-            │ (PostgreSQL/    │
-            │   Redshift)     │
+            │  Test Database  │
+            │   (PostgreSQL)  │
+            │   Port: 5433    │
+            │  (Auto-seeded)  │
+            └────────┬────────┘
+                     │
+            ┌────────▼────────┐
+            │    Metabase     │
+            │  (Visualization)│
+            │   Port: 3001    │
             └─────────────────┘
 ```
 
@@ -232,9 +239,11 @@ ETL Portal follows a **microservices architecture** with containerized component
 - Column statistics
 
 **Transformation Service** (`transformation_service.py`):
-- String transformations (UPPER, LOWER, TRIM, etc.)
-- Type conversions (TEXT, NUMERIC, TIMESTAMP, BOOLEAN)
-- Safe expression evaluation for calculated columns
+- String transformations (UPPER, LOWER, TRIM, CAPITALIZE, TITLE, etc.)
+- Date/Time transformations (EXTRACT_YEAR, EXTRACT_MONTH, TODAY, NOW)
+- Numeric transformations (ABS, FLOOR, CEILING)
+- Null handling (FILL_NULL, FILL_ZERO)
+- Type conversions handled automatically via column type mapping
 
 **ETL Service** (`etl_service.py`):
 - **Main orchestrator** for job execution
@@ -327,20 +336,34 @@ execute_task = PythonOperator(
 
 ### 4. PostgreSQL Databases
 
-#### Application Database
+#### ETL Portal Database (Application Database)
 
-**Container**: `postgres`
+**Container**: `postgres` (etl_portal_app_db)
 **Port**: 5432
-**Purpose**: Store application data
+**Purpose**: Store ETL Portal application metadata
 
 **Tables**:
 - `etl_jobs` - Job configurations
 - `column_mappings` - Column transformation rules
 - `credentials` - Encrypted database credentials
 - `job_runs` - Execution history and metrics
-- `schedules` - (Planned) Cron schedules
+- `schedules` - Cron schedules
 
 **Volume**: `postgres_data` - Persistent storage
+
+#### Test Database (ETL Destination)
+
+**Container**: `test-db` (etl_portal_test_db)
+**Port**: 5433
+**Purpose**: Default destination for ETL job testing and development
+
+**Features**:
+- Auto-created on `docker-compose up`
+- Credential auto-seeded via Alembic migration
+- Pre-configured in UI as "Test Database"
+- Useful for development and testing ETL pipelines
+
+**Volume**: `test_db_data` - Persistent storage
 
 #### Airflow Metadata Database
 
@@ -354,10 +377,11 @@ execute_task = PythonOperator(
 **Volume**: `airflow_postgres_data` - Persistent storage
 
 **Why Separate Databases**:
-1. **Isolation** - Airflow schema changes don't affect app data
-2. **Performance** - Avoid contention between transactional (app) and analytical (Airflow logs) workloads
-3. **Backup strategy** - Different RPO/RTO requirements
+1. **Isolation** - Each database serves a distinct purpose (app metadata, ETL destination, Airflow operations)
+2. **Performance** - Avoid contention between transactional (app), ETL (test DB), and analytical (Airflow logs) workloads
+3. **Backup strategy** - Different RPO/RTO requirements for each database
 4. **Versioning** - Independent migration lifecycles
+5. **Testing** - Test Database provides isolated environment for ETL development
 
 ---
 
@@ -677,14 +701,33 @@ execute_job = SimpleHttpOperator(
 
 **Backend** (`.env`):
 ```bash
+# Application Database (ETL Portal metadata)
+POSTGRES_USER=etl_user
+POSTGRES_PASSWORD=etl_password
+POSTGRES_DB=etl_portal
 DATABASE_URL=postgresql+asyncpg://etl_user:etl_password@postgres:5432/etl_portal
+
+# Test Database (ETL job destination)
+TEST_DB_HOST=test-db
+TEST_DB_PORT=5432
+TEST_DB_USER=test_user
+TEST_DB_PASSWORD=test_password
+TEST_DB_NAME=test_db
+
+# Security
 ENCRYPTION_KEY=<your-fernet-key>
 SECRET_KEY=<your-secret>
+
+# File Upload
 UPLOAD_DIR=/app/uploads
 MAX_UPLOAD_SIZE=1000000000  # 1GB
+
+# Airflow
 AIRFLOW_API_URL=http://airflow-webserver:8080/api/v1
 AIRFLOW_USERNAME=airflow
 AIRFLOW_PASSWORD=airflow
+
+# Redis
 REDIS_URL=redis://redis:6379/1
 ```
 
@@ -927,31 +970,38 @@ docker-compose exec airflow-worker airflow dags unpause etl_job_executor
 
 ## Project Status
 
-### Completed (Phase 4)
+### Completed
 
 ✅ CSV upload and parsing
+✅ Google Sheets integration (OAuth, direct data loading)
 ✅ Database connectivity (PostgreSQL, Redshift)
 ✅ Credential encryption and management
-✅ Column mapping and transformations
+✅ Separate application and test databases with auto-seeding
+✅ Column mapping with nullable configuration
+✅ Data transformations (20+ functions across 4 categories)
+✅ Type conversion via column mapping (removed redundant transformation functions)
 ✅ Job execution via Airflow
-✅ Progress tracking
+✅ Real-time progress monitoring (SSE)
+✅ Job run history with filtering and logs
+✅ Job scheduling (cron-based with Airflow DAG generation)
 ✅ All load strategies (INSERT, UPSERT, TRUNCATE_INSERT)
 ✅ DDL auto-generation
 ✅ Batch processing
-✅ Error handling and logging
+✅ Error handling and structured logging
+✅ Metabase integration for data visualization
 
 ### In Progress
 
-🔄 Real-time progress monitoring (SSE)
-🔄 Job run history UI
-🔄 Schedule management
+🔄 Enhanced UI/UX improvements
+🔄 Additional data source connectors
 
-### Planned (See plan file)
+### Planned
 
-📋 **Phase 9**: Google Sheets integration (OAuth, Sheets API)
-📋 **Phase 7**: Job scheduling (cron, dynamic DAG generation)
-📋 **Phase 6**: Job monitoring dashboard
-📋 **Phase 8**: Authentication (SAML2/Okta, RBAC)
+📋 Authentication (SAML2/Okta, RBAC)
+📋 Data quality validation rules
+📋 Advanced scheduling options (dependencies, backfilling)
+📋 Email notifications for job failures
+📋 API rate limiting and quotas
 
 ---
 

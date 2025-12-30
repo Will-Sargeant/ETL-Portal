@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { apiClient } from '@/lib/api'
 import { toast } from 'sonner'
-import { Loader2, Search, Clock, FileSpreadsheet } from 'lucide-react'
+import { Loader2, Search, Clock, FileSpreadsheet, ChevronDown, Info } from 'lucide-react'
 
 interface Spreadsheet {
   id: string
@@ -24,9 +27,17 @@ interface PreviewData {
   total_rows: number
 }
 
+interface RangeConfig {
+  start_row?: number
+  header_row?: number
+  end_row?: number
+  start_column?: string
+  end_column?: string
+}
+
 interface GoogleSheetSelectorProps {
   credentials: string
-  onSelect: (spreadsheetId: string, sheetName: string, columns: string[]) => void
+  onSelect: (spreadsheetId: string, sheetName: string, columns: string[], rangeConfig?: RangeConfig) => void
 }
 
 export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelectorProps) {
@@ -44,6 +55,13 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
   const [isLoadingSpreadsheets, setIsLoadingSpreadsheets] = useState(false)
   const [isLoadingSheets, setIsLoadingSheets] = useState(false)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+
+  // Range configuration
+  const [rangeConfig, setRangeConfig] = useState<RangeConfig>({
+    start_row: 1,
+    header_row: 1,
+  })
+  const [showAdvancedRange, setShowAdvancedRange] = useState(false)
 
   // Load recent spreadsheets on mount
   useEffect(() => {
@@ -78,11 +96,18 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
   // Load preview when sheet selected
   useEffect(() => {
     if (selectedSpreadsheet && selectedSheet) {
-      loadPreview(selectedSpreadsheet, selectedSheet)
+      loadPreview(selectedSpreadsheet, selectedSheet, rangeConfig)
     } else {
       setPreviewData(null)
     }
   }, [selectedSpreadsheet, selectedSheet])
+
+  // Function to refresh preview with current range config
+  const refreshPreview = () => {
+    if (selectedSpreadsheet && selectedSheet) {
+      loadPreview(selectedSpreadsheet, selectedSheet, rangeConfig)
+    }
+  }
 
   const loadRecentSpreadsheets = async () => {
     setIsLoadingSpreadsheets(true)
@@ -138,16 +163,17 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
     }
   }
 
-  const loadPreview = async (spreadsheetId: string, sheetName: string) => {
+  const loadPreview = async (spreadsheetId: string, sheetName: string, customRange?: RangeConfig) => {
     setIsLoadingPreview(true)
     try {
       const { data } = await apiClient.post('/google/sheets/preview', {
         spreadsheet_id: spreadsheetId,
         sheet_name: sheetName,
-        encrypted_credentials: credentials
+        encrypted_credentials: credentials,
+        ...customRange
       })
       setPreviewData(data)
-      onSelect(spreadsheetId, sheetName, data.columns)
+      onSelect(spreadsheetId, sheetName, data.columns, customRange)
     } catch (error) {
       console.error('Preview error:', error)
       toast.error('Failed to load preview', {
@@ -291,6 +317,107 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
             </Select>
           )}
         </div>
+      )}
+
+      {/* Range Configuration */}
+      {selectedSheet && (
+        <Collapsible open={showAdvancedRange} onOpenChange={setShowAdvancedRange}>
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" className="w-full justify-between">
+              <span className="flex items-center gap-2">
+                <Info className="h-4 w-4" />
+                Advanced Range Options
+              </span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${showAdvancedRange ? 'rotate-180' : ''}`} />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-4 space-y-4">
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Configure custom ranges for sheets with headers not in row 1, or to exclude certain rows/columns.
+              </AlertDescription>
+            </Alert>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="start-row">Start Row</Label>
+                <Input
+                  id="start-row"
+                  type="number"
+                  min={1}
+                  value={rangeConfig.start_row || 1}
+                  onChange={(e) => setRangeConfig({ ...rangeConfig, start_row: parseInt(e.target.value) || 1 })}
+                  placeholder="1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">First row to read (1-indexed)</p>
+              </div>
+
+              <div>
+                <Label htmlFor="header-row">Header Row</Label>
+                <Input
+                  id="header-row"
+                  type="number"
+                  min={1}
+                  value={rangeConfig.header_row || 1}
+                  onChange={(e) => setRangeConfig({ ...rangeConfig, header_row: parseInt(e.target.value) || 1 })}
+                  placeholder="1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Row containing column headers</p>
+              </div>
+
+              <div>
+                <Label htmlFor="end-row">End Row (Optional)</Label>
+                <Input
+                  id="end-row"
+                  type="number"
+                  min={1}
+                  value={rangeConfig.end_row || ''}
+                  onChange={(e) => setRangeConfig({ ...rangeConfig, end_row: e.target.value ? parseInt(e.target.value) : undefined })}
+                  placeholder="All rows"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Last row to read (leave empty for all)</p>
+              </div>
+
+              <div>
+                <Label htmlFor="start-column">Start Column</Label>
+                <Input
+                  id="start-column"
+                  type="text"
+                  value={rangeConfig.start_column || 'A'}
+                  onChange={(e) => setRangeConfig({ ...rangeConfig, start_column: e.target.value.toUpperCase() || 'A' })}
+                  placeholder="A"
+                  maxLength={3}
+                />
+                <p className="text-xs text-muted-foreground mt-1">First column (A, B, C, etc.)</p>
+              </div>
+
+              <div>
+                <Label htmlFor="end-column">End Column (Optional)</Label>
+                <Input
+                  id="end-column"
+                  type="text"
+                  value={rangeConfig.end_column || ''}
+                  onChange={(e) => setRangeConfig({ ...rangeConfig, end_column: e.target.value.toUpperCase() || undefined })}
+                  placeholder="All columns"
+                  maxLength={3}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Last column (leave empty for all)</p>
+              </div>
+            </div>
+
+            <Button onClick={refreshPreview} disabled={isLoadingPreview} className="w-full">
+              {isLoadingPreview ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Updating Preview...
+                </>
+              ) : (
+                'Apply Range & Refresh Preview'
+              )}
+            </Button>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
       {/* Loading Preview */}

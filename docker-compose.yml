@@ -1,8 +1,8 @@
 services:
-  # PostgreSQL - Application Database
+  # PostgreSQL - Application Database (for ETL Portal metadata)
   postgres:
     image: postgres:15-alpine
-    container_name: etl_portal_db
+    container_name: etl_portal_app_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-etl_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-etl_password}
@@ -11,9 +11,27 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init-metabase-db.sql:/docker-entrypoint-initdb.d/init-metabase-db.sql
+      - ./docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etl_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL - Test Database (for ETL job destination)
+  test-db:
+    image: postgres:15-alpine
+    container_name: etl_portal_test_db
+    environment:
+      POSTGRES_USER: ${TEST_DB_USER:-test_user}
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:-test_password}
+      POSTGRES_DB: ${TEST_DB_NAME:-test_db}
+    ports:
+      - "5433:5432"
+    volumes:
+      - test_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_DB_USER:-test_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -123,6 +141,7 @@ services:
       - airflow-db
       - redis
       - postgres
+      - test-db
     environment:
       - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-db/airflow
@@ -158,6 +177,7 @@ services:
     restart: always
     depends_on:
       - postgres
+      - test-db
       - redis
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-etl_user}:${POSTGRES_PASSWORD:-etl_password}@postgres:5432/${POSTGRES_DB:-etl_portal}
@@ -169,6 +189,11 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3000/auth/google/callback}
+      - TEST_DB_HOST=test-db
+      - TEST_DB_PORT=5432
+      - TEST_DB_USER=${TEST_DB_USER:-test_user}
+      - TEST_DB_PASSWORD=${TEST_DB_PASSWORD:-test_password}
+      - TEST_DB_NAME=${TEST_DB_NAME:-test_db}
     volumes:
       - ./backend:/app
       - ./uploads:/app/uploads:rw
@@ -216,5 +241,6 @@ services:
 
 volumes:
   postgres_data:
+  test_db_data:
   airflow_postgres_data:
   metabase_data:

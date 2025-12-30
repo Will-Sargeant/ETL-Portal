@@ -107,13 +107,21 @@ export function autoPopulateFromGoogleSheets(
   spreadsheetId: string,
   sheetName: string,
   columns: string[],
-  credentials: string
+  credentials: string,
+  rangeConfig?: {
+    start_row?: number
+    header_row?: number
+    end_row?: number
+    start_column?: string
+    end_column?: string
+  }
 ): Partial<WizardState> {
-  // Create source configuration
+  // Create source configuration with optional range
   const googleSheetsConfig = {
     encrypted_credentials: credentials,
     spreadsheet_id: spreadsheetId,
     sheet_name: sheetName,
+    ...rangeConfig,
   }
 
   // Auto-generate column mappings from sheet columns

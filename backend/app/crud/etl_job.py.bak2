@@ -11,19 +11,6 @@ from app.models.job_run import JobRun
 from app.schemas.etl_job import ETLJobCreate, ETLJobUpdate, ColumnMappingCreate
 
 logger = structlog.get_logger()
-from typing import Optional, List
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-import structlog
-
-from app.models.etl_job import ETLJob
-from app.models.column_mapping import ColumnMapping
-from app.models.schedule import Schedule
-from app.models.job_run import JobRun
-from app.schemas.etl_job import ETLJobCreate, ETLJobUpdate, ColumnMappingCreate
-
-logger = structlog.get_logger()
 
 
 def generate_ddl(schema: str, table: str, column_mappings: List[ColumnMappingCreate]) -> str:
@@ -380,10 +367,6 @@ async def update_column_mappings(
     await db.flush()
 
     # Create new mappings
-    new_mappings = []
-    for mapping_data in mappings:
-        # Map frontend field names to backend column names
-        mapping_dict = mapping_data.model_dump(exclude_none=True)
 
         logger.info(
             "processing_column_mapping",
@@ -392,18 +375,16 @@ async def update_column_mappings(
             transformations_in_dict=mapping_dict.get("transformations"),
             transformation_in_dict=mapping_dict.get("transformation")
         )
+    new_mappings = []
+    for mapping_data in mappings:
+        # Map frontend field names to backend column names
+        mapping_dict = mapping_data.model_dump(exclude_none=True)
 
         # Handle transformations array or single transformation
         transformations_value = mapping_dict.get('transformations')
         if not transformations_value and mapping_dict.get('transformation'):
             # Convert single transformation to array
             transformations_value = [mapping_dict['transformation']]
-
-        logger.info(
-            "final_transformations_value",
-            source_column=mapping_dict.get("source_column"),
-            transformations=transformations_value
-        )
 
         db_mapping = ColumnMapping(
             job_id=job_id,

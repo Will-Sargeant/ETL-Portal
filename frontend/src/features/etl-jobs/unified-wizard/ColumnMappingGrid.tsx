@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
-import { AlertCircle, ArrowRight, X, CheckCircle, Wand2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, X, CheckCircle, Wand2, Info } from 'lucide-react'
 import { getTransformationsByCategory } from '@/lib/transformations'
 import type { ColumnMappingConfig } from '@/types/source'
 import type { TableColumn } from '@/types/destination'
@@ -440,6 +440,60 @@ export function ColumnMappingGrid({
                                     PK
                                   </Badge>
                                 )}
+                              </div>
+
+                              {/* Nullable Checkbox */}
+                              <div className="flex items-center gap-1">
+                                <Checkbox
+                                  id={`nullable-${idx}`}
+                                  checked={mapping.isNullable !== false}
+                                  onCheckedChange={(checked) => {
+                                    const updatedMappings = [...columnMappings]
+                                    updatedMappings[idx] = {
+                                      ...updatedMappings[idx],
+                                      isNullable: checked === true,
+                                    }
+                                    onChange(updatedMappings)
+                                  }}
+                                />
+                                <Label htmlFor={`nullable-${idx}`} className="text-sm cursor-pointer">
+                                  Nullable
+                                </Label>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-4 w-4 p-0">
+                                      <Info className="h-3 w-3 text-muted-foreground" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80" align="start">
+                                    <div className="space-y-2">
+                                      <h4 className="font-medium text-sm">What is Nullable?</h4>
+                                      <p className="text-xs text-muted-foreground">
+                                        Nullable columns can contain empty (NULL) values in the database.
+                                        If unchecked (NOT NULL), the column must always have a value.
+                                      </p>
+                                      <div className="space-y-1 text-xs">
+                                        <p className="font-medium">When to check Nullable:</p>
+                                        <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-2">
+                                          <li>Optional data (e.g., middle name, phone number)</li>
+                                          <li>Fields that may be added later</li>
+                                          <li>Data that isn't always available in source</li>
+                                        </ul>
+                                      </div>
+                                      <div className="space-y-1 text-xs">
+                                        <p className="font-medium">When to uncheck Nullable:</p>
+                                        <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-2">
+                                          <li>Required fields (e.g., ID, email, name)</li>
+                                          <li>Fields needed for business logic</li>
+                                          <li>When you want to enforce data quality</li>
+                                        </ul>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground italic">
+                                        Tip: Use FILL_NULL or FILL_ZERO transformations to replace empty values before loading.
+                                      </p>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
                               </div>
 
                               {/* Transformations Popover - Available for all mapped columns */}
