@@ -44,6 +44,7 @@ export function JobDetailsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
 
   const { data: job, isLoading } = useQuery({
     queryKey: ['etl-job', jobId],
@@ -129,10 +130,17 @@ export function JobDetailsPage() {
     },
   })
 
-  const handleExecute = () => {
-    if (confirm('Are you sure you want to execute this job?')) {
-      executeMutation.mutate()
-    }
+  const handleExecuteClick = () => {
+    setExecuteDialogOpen(true)
+  }
+
+  const handleConfirmExecute = () => {
+    executeMutation.mutate()
+    setExecuteDialogOpen(false)
+  }
+
+  const handleCancelExecute = () => {
+    setExecuteDialogOpen(false)
   }
 
   const handleDeleteClick = () => {
@@ -204,7 +212,7 @@ export function JobDetailsPage() {
               Edit Job
             </Button>
             <Button
-              onClick={handleExecute}
+              onClick={handleExecuteClick}
               disabled={executeMutation.isPending}
             >
               <Play className="w-4 h-4 mr-2" />
@@ -389,6 +397,72 @@ export function JobDetailsPage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Execute Confirmation Dialog */}
+      <AlertDialog open={executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-amber-600">
+              <Play className="w-5 h-5" />
+              <AlertDialogTitle>Execute Job Now</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                You are about to manually trigger the job{' '}
+                <span className="font-semibold">&quot;{job?.name}&quot;</span> to execute immediately.
+              </p>
+
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-medium">Source:</span> {job?.source_type.toUpperCase()}
+                </div>
+                <div>
+                  <span className="font-medium">Destination:</span> {job?.destination_type.toUpperCase()}
+                  {job?.destination_config?.schema && job?.destination_config?.table && (
+                    <span className="text-muted-foreground">
+                      {' '}({job.destination_config.schema}.{job.destination_config.table})
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium">Load Strategy:</span>{' '}
+                  <span className={job?.load_strategy === 'truncate_insert' ? 'text-destructive font-semibold' : ''}>
+                    {job?.load_strategy.toUpperCase().replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
+
+              {job?.load_strategy === 'truncate_insert' && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-semibold text-destructive">Warning: Destructive Operation</p>
+                      <p className="text-muted-foreground mt-1">
+                        This will delete all existing data in the destination table before inserting new data.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-sm text-muted-foreground">
+                The job will run asynchronously via Airflow. You can monitor progress in the Activity tab.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelExecute}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmExecute}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Execute Now
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

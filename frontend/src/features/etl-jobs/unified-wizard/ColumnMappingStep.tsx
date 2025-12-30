@@ -78,27 +78,31 @@ export function ColumnMappingStep({ state, onUpdate }: ColumnMappingStepProps) {
     })
   }
 
-  // Get capabilities based on load strategy
+  // Get capabilities based on load strategy and whether creating new table
   const getStrategyCapabilities = () => {
+    const canEditNames = isCreatingNewTable
+
     switch (loadStrategy) {
       case 'insert':
         return {
           allowed: [
+            ...(canEditNames ? ['Edit column names'] : []),
             'Exclude optional columns',
             'Apply transformations',
           ],
           disallowed: [
-            'Edit column names',
+            ...(!canEditNames ? ['Edit column names (existing table)'] : []),
           ],
         }
       case 'upsert':
         return {
           allowed: [
+            ...(canEditNames ? ['Edit column names'] : []),
             'Apply transformations',
           ],
           disallowed: [
+            ...(!canEditNames ? ['Edit column names (existing table)'] : []),
             'Exclude columns',
-            'Edit column names',
           ],
           warnings: [
             'All columns must be mapped exactly',
@@ -107,11 +111,13 @@ export function ColumnMappingStep({ state, onUpdate }: ColumnMappingStepProps) {
       case 'truncate_insert':
         return {
           allowed: [
-            'Edit column names',
+            ...(canEditNames ? ['Edit column names'] : []),
             'Exclude optional columns',
             'Apply transformations',
           ],
-          disallowed: [],
+          disallowed: [
+            ...(!canEditNames ? ['Edit column names (existing table)'] : []),
+          ],
         }
       default:
         return { allowed: [], disallowed: [] }

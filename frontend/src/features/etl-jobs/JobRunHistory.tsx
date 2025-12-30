@@ -9,7 +9,8 @@ import {
   Trash2,
   FileText,
   RefreshCw,
-  Filter
+  Filter,
+  AlertTriangle
 } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
@@ -23,6 +24,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Select,
   SelectContent,
@@ -71,6 +82,12 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
   const [filters, setFilters] = useState<JobRunFilters>({ job_id: jobId, limit: 50 })
   const [selectedRun, setSelectedRun] = useState<number | null>(null)
   const [showLogsDialog, setShowLogsDialog] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [jobRunToDelete, setJobRunToDelete] = useState<{
+    id: number
+    status: string
+    startedAt: string | null
+  } | null>(null)
 
   const { data: jobRuns, isLoading, refetch } = useQuery({
     queryKey: ['job-runs', filters],
@@ -95,6 +112,8 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['job-runs'] })
       toast.success('Job run deleted successfully')
+      setDeleteDialogOpen(false)
+      setJobRunToDelete(null)
     },
     onError: (error: any) => {
       const message = error.response?.data?.detail || 'Failed to delete job run'
@@ -102,10 +121,20 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
     },
   })
 
-  const handleDelete = (id: number) => {
-    if (confirm('Are you sure you want to delete this job run?')) {
-      deleteMutation.mutate(id)
+  const handleDeleteClick = (id: number, status: string, startedAt: string | null) => {
+    setJobRunToDelete({ id, status, startedAt })
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (jobRunToDelete) {
+      deleteMutation.mutate(jobRunToDelete.id)
     }
+  }
+
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false)
+    setJobRunToDelete(null)
   }
 
   const handleViewLogs = (runId: number) => {
@@ -279,7 +308,7 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(run.id)}
+                      onClick={() => handleDeleteClick(run.id, run.status, run.started_at)}
                       disabled={deleteMutation.isPending}
                       title="Delete"
                     >
@@ -348,6 +377,63 @@ export function JobRunHistory({ jobId, showJobName = false }: JobRunHistoryProps
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              <AlertDialogTitle>
+                {jobRunToDelete && ['pending', 'running'].includes(jobRunToDelete.status.toLowerCase())
+                  ? 'Cancel and Delete Job Run'
+                  : 'Delete Job Run'}
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="space-y-3">
+              {jobRunToDelete && ['pending', 'running'].includes(jobRunToDelete.status.toLowerCase()) ? (
+                <>
+                  <p>
+                    This job execution is currently{' '}
+                    <span className="font-semibold">{jobRunToDelete.status.toLowerCase()}</span>.
+                  </p>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-md dark:bg-amber-900/20 dark:border-amber-800">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <p className="font-semibold text-amber-800 dark:text-amber-400">
+                          This will cancel the running execution
+                        </p>
+                        <p className="text-amber-700 dark:text-amber-500 mt-1">
+                          The Airflow task will be marked as failed and the execution history will be permanently deleted.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p>
+                  Are you sure you want to delete this job run history record?
+                  <br />
+                  <br />
+                  This action cannot be undone. All execution logs and metrics will be permanently deleted.
+                </p>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDelete}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {jobRunToDelete && ['pending', 'running'].includes(jobRunToDelete.status.toLowerCase())
+                ? 'Cancel & Delete'
+                : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
