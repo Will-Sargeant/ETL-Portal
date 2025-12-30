@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ChevronLeft, ChevronRight, Save, Play } from 'lucide-react'
@@ -37,6 +37,7 @@ interface UnifiedJobWizardProps {
 
 export function UnifiedJobWizard({ existingJob, mode = 'create' }: UnifiedJobWizardProps = {}) {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [state, setState] = useState<WizardState>(INITIAL_WIZARD_STATE)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const isEditMode = mode === 'edit' && !!existingJob
@@ -85,6 +86,20 @@ export function UnifiedJobWizard({ existingJob, mode = 'create' }: UnifiedJobWiz
       setState((prev) => ({ ...prev, ...editState }))
     }
   }, [isEditMode, existingJob])
+
+  // Handle step query parameter for direct navigation
+  useEffect(() => {
+    const stepParam = searchParams.get('step')
+    if (stepParam) {
+      const stepNum = parseInt(stepParam, 10)
+      // Validate step is within valid range (0-5)
+      if (stepNum >= 0 && stepNum <= 5) {
+        // In edit mode, don't allow navigation to step 0 (source selection)
+        const targetStep = isEditMode && stepNum === 0 ? 1 : stepNum
+        setState((prev) => ({ ...prev, currentStep: targetStep }))
+      }
+    }
+  }, [searchParams, isEditMode])
 
   // Mutation for updating the job (edit mode)
   const updateJobMutation = useMutation({

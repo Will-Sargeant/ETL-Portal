@@ -39,6 +39,10 @@ import { schedulesApi, type Schedule, type ScheduleCreate } from '@/lib/api/sche
 interface ScheduleManagerProps {
   jobId?: number
   showJobName?: boolean
+  readOnly?: boolean
+  onEdit?: () => void
+  isPaused?: boolean
+  onPauseToggle?: () => void
 }
 
 // Common cron expression presets
@@ -54,7 +58,14 @@ const CRON_PRESETS = [
   { label: 'Custom', value: 'custom' },
 ]
 
-export function ScheduleManager({ jobId, showJobName = false }: ScheduleManagerProps) {
+export function ScheduleManager({
+  jobId,
+  showJobName = false,
+  readOnly = false,
+  onEdit,
+  isPaused = false,
+  onPauseToggle
+}: ScheduleManagerProps) {
   const queryClient = useQueryClient()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -219,14 +230,38 @@ export function ScheduleManager({ jobId, showJobName = false }: ScheduleManagerP
               <Button variant="outline" size="icon" onClick={() => refetch()}>
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              {jobId && (
-                <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Schedule
-                    </Button>
-                  </DialogTrigger>
+              {readOnly && onPauseToggle && schedules && schedules.length > 0 && (
+                <Button
+                  variant={isPaused ? "default" : "outline"}
+                  onClick={onPauseToggle}
+                >
+                  {isPaused ? (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Resume Job
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-4 h-4 mr-2" />
+                      Pause Job
+                    </>
+                  )}
+                </Button>
+              )}
+              {readOnly && onEdit ? (
+                <Button onClick={onEdit}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit Schedules
+                </Button>
+              ) : (
+                jobId && (
+                  <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Schedule
+                      </Button>
+                    </DialogTrigger>
                   <DialogContent>
                     <form onSubmit={handleCreateSchedule}>
                       <DialogHeader>
@@ -302,6 +337,7 @@ export function ScheduleManager({ jobId, showJobName = false }: ScheduleManagerP
                     </form>
                   </DialogContent>
                 </Dialog>
+                )
               )}
             </div>
           </div>
@@ -366,40 +402,42 @@ export function ScheduleManager({ jobId, showJobName = false }: ScheduleManagerP
                     </div>
                   </div>
 
-                  <div className="flex gap-1 flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleToggle(schedule)}
-                      disabled={toggleMutation.isPending}
-                      title={schedule.enabled ? 'Disable' : 'Enable'}
-                    >
-                      {schedule.enabled ? (
-                        <Pause className="w-4 h-4" />
-                      ) : (
-                        <Play className="w-4 h-4 text-green-600" />
-                      )}
-                    </Button>
+                  {!readOnly && (
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleToggle(schedule)}
+                        disabled={toggleMutation.isPending}
+                        title={schedule.enabled ? 'Disable' : 'Enable'}
+                      >
+                        {schedule.enabled ? (
+                          <Pause className="w-4 h-4" />
+                        ) : (
+                          <Play className="w-4 h-4 text-green-600" />
+                        )}
+                      </Button>
 
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(schedule)}
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(schedule)}
+                        title="Edit"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
 
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(schedule)}
-                      disabled={deleteMutation.isPending}
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
-                  </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(schedule)}
+                        disabled={deleteMutation.isPending}
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

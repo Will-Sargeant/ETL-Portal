@@ -1,12 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { FileText, Database, Trash2, Clock, Play, Pause } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { FileText, Database, Clock } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { etlJobsApi } from '@/lib/api/etl-jobs'
-import type { ETLJobListItem, JobStatus } from '@/types/etl-job'
+import type { JobStatus } from '@/types/etl-job'
 
 interface JobsListProps {
   onViewJob?: (jobId: number) => void
@@ -24,54 +22,10 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 }
 
 export function JobsList({ onViewJob }: JobsListProps) {
-  const queryClient = useQueryClient()
-
   const { data: jobs, isLoading } = useQuery({
     queryKey: ['etl-jobs'],
     queryFn: () => etlJobsApi.list(),
   })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => etlJobsApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
-      toast.success('ETL job deleted successfully')
-    },
-    onError: (error: any) => {
-      const message = error.response?.data?.detail || 'Failed to delete ETL job'
-      toast.error(message)
-    },
-  })
-
-  const pauseMutation = useMutation({
-    mutationFn: (id: number) => etlJobsApi.pause(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
-      toast.success('Job paused successfully')
-    },
-    onError: (error: any) => {
-      const message = error.response?.data?.detail || 'Failed to pause job'
-      toast.error(message)
-    },
-  })
-
-  const resumeMutation = useMutation({
-    mutationFn: (id: number) => etlJobsApi.resume(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
-      toast.success('Job resumed successfully')
-    },
-    onError: (error: any) => {
-      const message = error.response?.data?.detail || 'Failed to resume job'
-      toast.error(message)
-    },
-  })
-
-  const handleDelete = (id: number, name: string) => {
-    if (confirm(`Are you sure you want to delete job "${name}"?`)) {
-      deleteMutation.mutate(id)
-    }
-  }
 
   const getSourceIcon = (type: string) => {
     return type === 'csv' ? FileText : Database
@@ -115,7 +69,8 @@ export function JobsList({ onViewJob }: JobsListProps) {
             return (
               <div
                 key={job.id}
-                className="flex items-center gap-4 p-4 border rounded-lg hover:bg-muted/30 transition-colors"
+                onClick={() => onViewJob && onViewJob(job.id)}
+                className="flex items-center gap-4 p-4 border rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <SourceIcon className="w-8 h-8 text-primary flex-shrink-0" />
@@ -155,51 +110,6 @@ export function JobsList({ onViewJob }: JobsListProps) {
                       </span>
                     </div>
                   </div>
-                </div>
-
-                <div className="flex gap-1 flex-shrink-0">
-                  {job.is_paused ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => resumeMutation.mutate(job.id)}
-                      disabled={resumeMutation.isPending}
-                      title="Resume job"
-                    >
-                      <Play className="w-4 h-4 text-green-600" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => pauseMutation.mutate(job.id)}
-                      disabled={pauseMutation.isPending}
-                      title="Pause job"
-                    >
-                      <Pause className="w-4 h-4" />
-                    </Button>
-                  )}
-
-                  {onViewJob && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onViewJob(job.id)}
-                      title="View details"
-                    >
-                      View
-                    </Button>
-                  )}
-
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDelete(job.id, job.name)}
-                    disabled={deleteMutation.isPending}
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4 text-destructive" />
-                  </Button>
                 </div>
               </div>
             )

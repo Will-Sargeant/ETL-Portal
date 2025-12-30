@@ -421,9 +421,10 @@ async def pause_job(
                 logging.error(f"Failed to pause Airflow DAG {schedule.airflow_dag_id}: {e}")
 
     await db.commit()
-    await db.refresh(db_job)
 
-    return db_job
+    # Re-fetch the job with updated status
+    updated_job = await crud.get_etl_job(db, job_id)
+    return updated_job
 
 
 @router.post("/{job_id}/resume", response_model=ETLJobResponse)
@@ -469,6 +470,7 @@ async def resume_job(
                 logging.error(f"Failed to unpause Airflow DAG {schedule.airflow_dag_id}: {e}")
 
     await db.commit()
-    await db.refresh(db_job)
 
-    return db_job
+    # Re-fetch the job with updated status
+    updated_job = await crud.get_etl_job(db, job_id)
+    return updated_job

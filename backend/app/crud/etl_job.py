@@ -174,12 +174,19 @@ async def get_etl_job(
     )
     run_count = run_count_result.scalar() or 0
 
-    # Count active schedules
+    # Count active schedules (ENABLED only)
     active_schedule_result = await db.execute(
         select(func.count(Schedule.id))
         .where(Schedule.job_id == job_id, Schedule.enabled == True)
     )
     active_schedule_count = active_schedule_result.scalar() or 0
+
+    # Count ALL schedules (enabled + disabled)
+    total_schedule_result = await db.execute(
+        select(func.count(Schedule.id))
+        .where(Schedule.job_id == job_id)
+    )
+    total_schedule_count = total_schedule_result.scalar() or 0
 
     # Detach from session to avoid triggering updates
     db.expunge(job)
@@ -187,10 +194,20 @@ async def get_etl_job(
     # Compute status
     if job.is_paused:
         job.status = "paused"
-    elif active_schedule_count > 0 or run_count > 0:
-        job.status = "live"
+    elif total_schedule_count > 0:
+        # Job has a schedule
+        if run_count == 0:
+            job.status = "draft"  # Has schedule but never run
+        elif active_schedule_count > 0:
+            job.status = "live"  # Has enabled schedule and been run
+        else:
+            job.status = "paused"  # Has disabled schedule and been run
     else:
-        job.status = "draft"
+        # Job has no schedule (ad-hoc job)
+        if run_count > 0:
+            job.status = "completed"
+        else:
+            job.status = "draft"
 
     return job
 
@@ -224,7 +241,7 @@ async def get_etl_jobs(
         .subquery()
     )
 
-    # Subquery to check for active schedules
+    # Subquery to check for active schedules (ENABLED only)
     active_schedule_subquery = (
         select(
             Schedule.job_id,
@@ -235,17 +252,29 @@ async def get_etl_jobs(
         .subquery()
     )
 
+    # Subquery for ALL schedules (enabled + disabled)
+    total_schedule_subquery = (
+        select(
+            Schedule.job_id,
+            func.count(Schedule.id).label('total_schedule_count')
+        )
+        .group_by(Schedule.job_id)
+        .subquery()
+    )
+
     # Main query with left joins
     query = (
         select(
             ETLJob,
             latest_run_subquery.c.last_executed_at,
             func.coalesce(run_count_subquery.c.run_count, 0).label('run_count'),
-            func.coalesce(active_schedule_subquery.c.active_schedule_count, 0).label('active_schedule_count')
+            func.coalesce(active_schedule_subquery.c.active_schedule_count, 0).label('active_schedule_count'),
+            func.coalesce(total_schedule_subquery.c.total_schedule_count, 0).label('total_schedule_count')
         )
         .outerjoin(latest_run_subquery, ETLJob.id == latest_run_subquery.c.job_id)
         .outerjoin(run_count_subquery, ETLJob.id == run_count_subquery.c.job_id)
         .outerjoin(active_schedule_subquery, ETLJob.id == active_schedule_subquery.c.job_id)
+        .outerjoin(total_schedule_subquery, ETLJob.id == total_schedule_subquery.c.job_id)
         .offset(skip)
         .limit(limit)
         .order_by(ETLJob.created_at.desc())
@@ -259,22 +288,29 @@ async def get_etl_jobs(
     # Attach last_executed_at and compute status for each job
     # We need to detach from session to avoid triggering updates
     jobs = []
-    for job, last_executed_at, run_count, active_schedule_count in result:
+    for job, last_executed_at, run_count, active_schedule_count, total_schedule_count in result:
         # Detach the job from the session so we can modify it without updating DB
         db.expunge(job)
 
         job.last_executed_at = last_executed_at
 
-        # Compute status based on rules:
-        # - paused if is_paused is True
-        # - live if has active schedule OR has been run at least once
-        # - draft otherwise
+        # Compute status
         if job.is_paused:
             job.status = "paused"
-        elif active_schedule_count > 0 or run_count > 0:
-            job.status = "live"
+        elif total_schedule_count > 0:
+            # Job has a schedule
+            if run_count == 0:
+                job.status = "draft"  # Has schedule but never run
+            elif active_schedule_count > 0:
+                job.status = "live"  # Has enabled schedule and been run
+            else:
+                job.status = "paused"  # Has disabled schedule and been run
         else:
-            job.status = "draft"
+            # Job has no schedule (ad-hoc job)
+            if run_count > 0:
+                job.status = "completed"
+            else:
+                job.status = "draft"
 
         jobs.append(job)
 

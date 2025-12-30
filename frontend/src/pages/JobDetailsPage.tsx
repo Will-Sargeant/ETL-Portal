@@ -13,14 +13,25 @@ import {
   History,
   FileText,
   Edit,
-  X
+  AlertTriangle
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { etlJobsApi } from '@/lib/api/etl-jobs'
+import { schedulesApi } from '@/lib/api/schedules'
 import { JobRunHistory } from '@/features/etl-jobs/JobRunHistory'
 import { JobRunProgress } from '@/features/etl-jobs/JobRunProgress'
 import { ScheduleManager } from '@/features/etl-jobs/ScheduleManager'
@@ -32,12 +43,25 @@ export function JobDetailsPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const { data: job, isLoading } = useQuery({
     queryKey: ['etl-job', jobId],
     queryFn: () => etlJobsApi.get(Number(jobId)),
     enabled: !!jobId,
   })
+
+  // Query schedules to get the DAG pause status
+  const { data: schedules } = useQuery({
+    queryKey: ['schedules', { job_id: jobId }],
+    queryFn: () => schedulesApi.list({ job_id: Number(jobId) }),
+    enabled: !!jobId,
+  })
+
+  // Get the first schedule (jobs typically have 0 or 1 schedule)
+  const schedule = schedules?.[0]
+  // DAG is paused when schedule.enabled is false
+  const isDagPaused = schedule ? !schedule.enabled : false
 
   const STATUS_COLORS: Record<JobStatus, string> = {
     draft: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
@@ -82,6 +106,7 @@ export function JobDetailsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['etl-job', jobId] })
       queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['schedules'] })
       toast.success('Job paused successfully')
     },
     onError: (error: any) => {
@@ -95,6 +120,7 @@ export function JobDetailsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['etl-job', jobId] })
       queryClient.invalidateQueries({ queryKey: ['etl-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['schedules'] })
       toast.success('Job resumed successfully')
     },
     onError: (error: any) => {
@@ -109,18 +135,16 @@ export function JobDetailsPage() {
     }
   }
 
-  const handlePause = () => {
-    pauseMutation.mutate()
+  const handleDeleteClick = () => {
+    setDeleteDialogOpen(true)
   }
 
-  const handleResume = () => {
-    resumeMutation.mutate()
+  const handleConfirmDelete = () => {
+    deleteMutation.mutate()
   }
 
-  const handleDelete = () => {
-    if (confirm(`Are you sure you want to delete job "${job?.name}"? This action cannot be undone.`)) {
-      deleteMutation.mutate()
-    }
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false)
   }
 
   if (isLoading) {
@@ -172,51 +196,28 @@ export function JobDetailsPage() {
           </div>
 
           <div className="flex gap-2">
-            <>
-              <Button
-                variant="outline"
-                onClick={() => navigate(`/jobs/${jobId}/edit`)}
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Edit Job
-              </Button>
-                {job.is_paused ? (
-                  <Button
-                    variant="outline"
-                    onClick={handleResume}
-                    disabled={resumeMutation.isPending}
-                  >
-                    <Play className="w-4 h-4 mr-2" />
-                    Resume Job
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      onClick={handleExecute}
-                      disabled={executeMutation.isPending}
-                    >
-                      <Play className="w-4 h-4 mr-2" />
-                      Execute Now
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handlePause}
-                      disabled={pauseMutation.isPending}
-                    >
-                      <Pause className="w-4 h-4 mr-2" />
-                      Pause Job
-                    </Button>
-                  </>
-                )}
-                <Button
-                  variant="destructive"
-                  onClick={handleDelete}
-                  disabled={deleteMutation.isPending}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </Button>
-              </>
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/jobs/${jobId}/edit`)}
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Job
+            </Button>
+            <Button
+              onClick={handleExecute}
+              disabled={executeMutation.isPending}
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Execute Now
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteClick}
+              disabled={deleteMutation.isPending}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </Button>
           </div>
         </div>
       </div>
@@ -337,7 +338,19 @@ export function JobDetailsPage() {
             </TabsContent>
 
             <TabsContent value="schedule" className="space-y-4">
-              <ScheduleManager jobId={Number(jobId)} />
+              <ScheduleManager
+                jobId={Number(jobId)}
+                readOnly={true}
+                onEdit={() => navigate(`/jobs/${jobId}/edit?step=4`)}
+                isPaused={isDagPaused}
+                onPauseToggle={() => {
+                  if (isDagPaused) {
+                    resumeMutation.mutate()
+                  } else {
+                    pauseMutation.mutate()
+                  }
+                }}
+              />
             </TabsContent>
 
             <TabsContent value="preview" className="space-y-4">
@@ -345,9 +358,41 @@ export function JobDetailsPage() {
             </TabsContent>
 
             <TabsContent value="settings" className="space-y-4">
-              <ColumnMappingsEditor job={job} />
+              <ColumnMappingsEditor
+                job={job}
+                readOnly={true}
+                onEdit={() => navigate(`/jobs/${jobId}/edit?step=3`)}
+              />
             </TabsContent>
           </Tabs>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              <AlertDialogTitle>Delete ETL Job</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription>
+              Are you sure you want to delete the job{' '}
+              <span className="font-semibold">&quot;{job?.name}&quot;</span>?
+              <br />
+              <br />
+              This action cannot be undone. All associated schedules, column mappings, and execution history will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDelete}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

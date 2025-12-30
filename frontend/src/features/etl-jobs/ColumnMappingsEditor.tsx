@@ -26,6 +26,8 @@ interface ColumnMappingsEditorProps {
   wizardMode?: boolean
   columnMappings?: ColumnMapping[]
   onMappingsChange?: (mappings: ColumnMapping[]) => void
+  readOnly?: boolean
+  onEdit?: () => void
 }
 
 const DATA_TYPES = [
@@ -47,6 +49,8 @@ export function ColumnMappingsEditor({
   wizardMode = false,
   columnMappings: wizardMappings,
   onMappingsChange,
+  readOnly = false,
+  onEdit,
 }: ColumnMappingsEditorProps) {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -175,6 +179,12 @@ export function ColumnMappingsEditor({
               View and edit how source columns are mapped and transformed for the destination
             </CardDescription>
           </div>
+          {readOnly && onEdit && (
+            <Button onClick={onEdit}>
+              <Edit2 className="w-4 h-4 mr-2" />
+              Edit Mappings
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -465,22 +475,24 @@ export function ColumnMappingsEditor({
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex gap-1 ml-4">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleEdit(mapping)}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(mapping.id)}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </div>
+                      {!readOnly && (
+                        <div className="flex gap-1 ml-4">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleEdit(mapping)}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDelete(mapping.id)}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
