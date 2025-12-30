@@ -80,18 +80,27 @@ ETL Portal follows a **microservices architecture** with containerized component
             │   ETL Jobs)    │ │             │
             └────────┬───────┘ └─────────────┘
                      │
-            ┌────────▼────────┐
-            │  Test Database  │
-            │   (PostgreSQL)  │
-            │   Port: 5433    │
-            │  (Auto-seeded)  │
-            └────────┬────────┘
+            ┌────────▼────────────────────────────────────┐
+            │  YOUR DESTINATION DATABASES                 │
+            │  ─────────────────────────────────────────  │
+            │  • Production PostgreSQL / Redshift         │
+            │  • Data Warehouse / Data Lake               │
+            │  • Business Intelligence databases          │
+            │                                             │
+            │  ⚠️  Development: Test Database provided    │
+            │     (PostgreSQL, Port 5433, auto-seeded)   │
+            └────────┬────────────────────────────────────┘
                      │
-            ┌────────▼────────┐
-            │    Metabase     │
-            │  (Visualization)│
-            │   Port: 3001    │
-            └─────────────────┘
+            ┌────────▼────────────────────────────────────┐
+            │  YOUR VISUALIZATION / BI STACK              │
+            │  ─────────────────────────────────────────  │
+            │  • Tableau / Power BI / Looker              │
+            │  • Custom dashboards                        │
+            │  • Data analysis tools                      │
+            │                                             │
+            │  ⚠️  Development: Metabase provided         │
+            │     (Port 3001)                             │
+            └─────────────────────────────────────────────┘
 ```
 
 ### Design Principles
@@ -142,7 +151,6 @@ ETL Portal follows a **microservices architecture** with containerized component
 **Library**: pandas 2.1.4
 - **Why**: Powerful data manipulation, wide format support, efficient type inference
 - **Data Types**: NumPy 1.26.2 - Numerical computing foundation
-- **Expression Evaluation**: simpleeval 0.9.13 - Safe Python expression execution for calculated columns
 - **Encoding Detection**: chardet 5.2.0 - Automatic character encoding detection for CSV files
 
 ### Databases
@@ -449,7 +457,7 @@ User/API → Backend → Airflow API → Scheduler → Redis Queue
                      Read CSV (pandas)                      Update JobRun
                             ↓                                  (progress)
                     Apply Transformations
-                   (mappings, types, expressions)
+                      (mappings, types)
                             ↓
                     Write to Destination
                     (asyncpg - batches)
@@ -463,8 +471,6 @@ User/API → Backend → Airflow API → Scheduler → Redis Queue
 CSV → pandas DataFrame → Filter Columns → Rename → Transform
                                                         ↓
                                                  Type Conversion
-                                                        ↓
-                                              Calculated Columns
                                                         ↓
                                                   Fill Defaults
                                                         ↓
