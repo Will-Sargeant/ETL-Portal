@@ -734,7 +734,9 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    - (Configurable via `AIRFLOW_ADMIN_USER` and `AIRFLOW_ADMIN_PASSWORD` in `.env`)
 
    **Metabase** (http://localhost:3002):
-   - First-time setup required (create admin account on first visit)
+   - Auto-configured with admin account: `admin@metabase.local` / `metabase123`
+   - Test Database connection pre-configured
+   - (See Metabase Setup section below for manual configuration if needed)
 
 ---
 
@@ -818,16 +820,22 @@ Once configured, users can:
 
 Metabase is automatically configured with a connection to the test database for immediate use.
 
-**Auto-Configuration (Recommended)**:
-- On first startup, Metabase is automatically configured with:
-  - Admin account: `admin@metabase.local` / `metabase123`
-  - Test Database connection (pre-configured)
-  - Access at: http://localhost:3002
+**Auto-Configuration**:
+On first startup, Metabase is automatically configured with:
+- **Admin account**: `admin@metabase.local` / `metabase123`
+- **Test Database**: PostgreSQL connection to `test-db` (pre-configured)
+- **Sample Database**: Automatically removed (H2 sample data not included)
+
+**Access Metabase**:
+- **Direct login URL**: http://localhost:3002/auth/login
+  - Email: `admin@metabase.local`
+  - Password: `metabase123`
+- Using the direct login URL bypasses the setup wizard on fresh installations
 
 **Manual Configuration** (if auto-setup fails):
 1. Navigate to http://localhost:3002
-2. Create an admin account
-3. Add test-db connection:
+2. Complete the setup wizard to create an admin account
+3. Add test-db connection manually:
    - **Database type**: PostgreSQL
    - **Name**: Test Database
    - **Host**: `test-db`
@@ -837,10 +845,11 @@ Metabase is automatically configured with a connection to the test database for 
    - **Password**: `test_password`
 
 **Using Metabase**:
-1. Log in to Metabase
-2. Browse the Test Database to see tables created by your ETL jobs
-3. Create dashboards and visualizations from your ETL data
+1. Log in at http://localhost:3002/auth/login
+2. Click "Browse" → "Test Database" to see tables created by your ETL jobs
+3. Create SQL queries, dashboards, and visualizations from your ETL data
 4. Set up scheduled reports and alerts
+5. Share dashboards with your team
 
 ---
 

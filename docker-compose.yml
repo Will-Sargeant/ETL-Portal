@@ -246,6 +246,7 @@ services:
       - MB_DB_USER=etl_user
       - MB_DB_PASS=etl_password
       - MB_DB_HOST=postgres
+      - MB_SETUP_SAMPLE_DATABASE=false
     volumes:
       - metabase_data:/metabase-data
 
