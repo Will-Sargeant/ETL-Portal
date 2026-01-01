@@ -667,22 +667,37 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    cp .env.example .env
    ```
 
-3. **Generate encryption key**:
-   ```bash
-   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-   ```
-
-   Add to `.env`:
-   ```
-   ENCRYPTION_KEY=<generated-key>
-   ```
-
-4. **Start services**:
+3. **Start Docker services**:
    ```bash
    docker-compose up -d
    ```
 
-5. **Run migrations**:
+   Wait for all containers to be healthy (this may take 1-2 minutes).
+
+4. **Generate encryption keys**:
+
+   Generate the backend encryption key:
+   ```bash
+   docker-compose exec backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+   Generate the Airflow Fernet key:
+   ```bash
+   docker-compose exec backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+   Add both keys to `.env`:
+   ```
+   ENCRYPTION_KEY=<first-generated-key>
+   AIRFLOW_FERNET_KEY=<second-generated-key>
+   ```
+
+5. **Restart services with encryption keys**:
+   ```bash
+   docker-compose restart backend airflow-webserver airflow-scheduler airflow-worker
+   ```
+
+6. **Run database migrations**:
    ```bash
    docker-compose exec backend alembic upgrade head
    ```
@@ -690,15 +705,16 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    This will:
    - Create all database tables
    - **Automatically seed a "Test Database" credential** for the test-db container
+   - **Seed test user accounts** (admin@test.com and user@test.com)
    - The test credential will appear in the Credentials tab, ready to use
 
-6. **Access application**:
+7. **Access application**:
    - Frontend: http://localhost:3000
    - Backend API Docs: http://localhost:8000/docs
    - Airflow UI: http://localhost:8080 (airflow/airflow)
    - Test Database: Available as **"Test Database"** in Credentials tab
 
-7. **Login to application**:
+8. **Login to application**:
    - Use test credentials to log in:
      - Admin: `admin@test.com` / `admin123`
      - User: `user@test.com` / `user123`

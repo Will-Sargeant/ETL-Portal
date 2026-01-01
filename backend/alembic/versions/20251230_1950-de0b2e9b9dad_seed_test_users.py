@@ -7,6 +7,7 @@ Create Date: 2025-12-30 19:50:06.981772
 """
 from typing import Sequence, Union
 from datetime import datetime
+import bcrypt
 
 from alembic import op
 import sqlalchemy as sa
@@ -21,25 +22,27 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Seed test users for development."""
-    # Pre-hashed passwords (bcrypt)
-    # admin123 -> $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzpJLm5eDC
-    # user123  -> $2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36zRzI7d.sHdR4WW6dGZH6C
+    # Generate password hashes dynamically to ensure correctness
+    admin_hash = bcrypt.hashpw('admin123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    user_hash = bcrypt.hashpw('user123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
     now = datetime.utcnow().isoformat()
+
+    # Delete existing users first (in case they have wrong password hashes)
+    op.execute("DELETE FROM users WHERE email IN ('admin@test.com', 'user@test.com')")
 
     op.execute(f"""
         INSERT INTO users (email, full_name, password_hash, role, auth_provider, is_active, created_at, updated_at)
         VALUES (
             'admin@test.com',
             'Admin User',
-            '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzpJLm5eDC',
+            '{admin_hash}',
             'admin',
             'local',
             true,
             '{now}',
             '{now}'
-        )
-        ON CONFLICT (email) DO NOTHING;
+        );
     """)
 
     op.execute(f"""
@@ -47,14 +50,13 @@ def upgrade() -> None:
         VALUES (
             'user@test.com',
             'Test User',
-            '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36zRzI7d.sHdR4WW6dGZH6C',
+            '{user_hash}',
             'user',
             'local',
             true,
             '{now}',
             '{now}'
-        )
-        ON CONFLICT (email) DO NOTHING;
+        );
     """)
 
 
