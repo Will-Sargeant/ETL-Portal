@@ -84,6 +84,9 @@ services:
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
       - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:-admin}
+      - AIRFLOW_ADMIN_EMAIL=${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -117,6 +120,9 @@ services:
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-}
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:-admin}
+      - AIRFLOW_ADMIN_EMAIL=${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -150,6 +156,9 @@ services:
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-}
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER:-admin}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:-admin}
+      - AIRFLOW_ADMIN_EMAIL=${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-etl_user}:${POSTGRES_PASSWORD:-etl_password}@postgres:5432/${POSTGRES_DB:-etl_portal}
       - REDIS_URL=redis://redis:6379/1
@@ -227,17 +236,29 @@ services:
     restart: always
     depends_on:
       - postgres
+      - test-db
     ports:
       - "3002:3000"
     environment:
       - MB_DB_TYPE=postgres
       - MB_DB_DBNAME=metabase
       - MB_DB_PORT=5432
-      - MB_DB_USER=${POSTGRES_USER:-etl_user}
-      - MB_DB_PASS=${POSTGRES_PASSWORD:-etl_password}
+      - MB_DB_USER=etl_user
+      - MB_DB_PASS=etl_password
       - MB_DB_HOST=postgres
     volumes:
       - metabase_data:/metabase-data
+
+  # Metabase Init - Auto-configure Metabase with test-db connection
+  metabase-init:
+    image: curlimages/curl:latest
+    container_name: etl_portal_metabase_init
+    depends_on:
+      - metabase
+    volumes:
+      - ./docker/metabase/init-metabase.sh:/init-metabase.sh:ro
+    command: sh /init-metabase.sh
+    restart: "no"
 
 volumes:
   postgres_data:

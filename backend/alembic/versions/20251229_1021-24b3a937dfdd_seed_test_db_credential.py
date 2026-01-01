@@ -27,6 +27,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Seed the test database credential."""
+    # Delete existing Test Database credential first (in case it was encrypted with old method)
+    op.execute("DELETE FROM credentials WHERE name = 'Test Database'")
+
     # Get test DB credentials from environment variables
     test_db_host = os.getenv('TEST_DB_HOST', 'test-db')
     test_db_port = int(os.getenv('TEST_DB_PORT', '5432'))
@@ -37,28 +40,20 @@ def upgrade() -> None:
     # Build connection string
     connection_string = f"postgresql://{test_db_user}:{test_db_password}@{test_db_host}:{test_db_port}/{test_db_name}"
 
-    # Encrypt the connection string
+    # Encrypt the connection string using updated encryption.py (now uses direct Fernet key)
     encrypted_connection_string = encrypt_string(connection_string)
 
-    # Check if credential already exists
-    conn = op.get_bind()
-    result = conn.execute(
-        sa.text("SELECT COUNT(*) FROM credentials WHERE name = 'Test Database'")
-    ).scalar()
+    # Insert the credential with the new encryption
+    now = datetime.utcnow().isoformat()
+    escaped_encrypted = encrypted_connection_string.replace("'", "''")
 
-    # Only insert if it doesn't exist
-    if result == 0:
-        # Use op.execute with raw SQL, escaping single quotes in the encrypted string
-        now = datetime.utcnow().isoformat()
-        escaped_encrypted = encrypted_connection_string.replace("'", "''")
-        
-        # Note: ENUM values are uppercase (POSTGRESQL, REDSHIFT)
-        op.execute(f"""
-            INSERT INTO credentials
-            (name, db_type, encrypted_connection_string, host, port, database, username, ssl_mode, created_at, updated_at)
-            VALUES
-            ('Test Database', 'POSTGRESQL'::databasetype, '{escaped_encrypted}', '{test_db_host}', {test_db_port}, '{test_db_name}', '{test_db_user}', 'prefer', '{now}', '{now}')
-        """)
+    # Note: ENUM values are uppercase (POSTGRESQL, REDSHIFT)
+    op.execute(f"""
+        INSERT INTO credentials
+        (name, db_type, encrypted_connection_string, host, port, database, username, ssl_mode, created_at, updated_at)
+        VALUES
+        ('Test Database', 'POSTGRESQL'::databasetype, '{escaped_encrypted}', '{test_db_host}', {test_db_port}, '{test_db_name}', '{test_db_user}', 'prefer', '{now}', '{now}')
+    """)
 
 
 def downgrade() -> None:

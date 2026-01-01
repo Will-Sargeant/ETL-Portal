@@ -674,22 +674,28 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
 
    Wait for all containers to be healthy (this may take 1-2 minutes).
 
-4. **Generate encryption keys**:
+4. **Generate security keys**:
 
-   Generate the backend encryption key:
+   Generate the backend encryption key (for database credentials):
    ```bash
    docker-compose exec backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
    ```
 
-   Generate the Airflow Fernet key:
+   Generate the Airflow Fernet key (for Airflow secrets):
    ```bash
    docker-compose exec backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
    ```
 
-   Add both keys to `.env`:
+   Generate the SECRET_KEY (for JWT tokens):
+   ```bash
+   openssl rand -hex 32
+   ```
+
+   Add all three keys to `.env`:
    ```
    ENCRYPTION_KEY=<first-generated-key>
    AIRFLOW_FERNET_KEY=<second-generated-key>
+   SECRET_KEY=<third-generated-key>
    ```
 
 5. **Restart services with encryption keys**:
@@ -709,16 +715,26 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    - The test credential will appear in the Credentials tab, ready to use
 
 7. **Access application**:
-   - Frontend: http://localhost:3000
-   - Backend API Docs: http://localhost:8000/docs
-   - Airflow UI: http://localhost:8080 (airflow/airflow)
-   - Test Database: Available as **"Test Database"** in Credentials tab
+   - **Frontend (ETL Portal)**: http://localhost:3000
+   - **Backend API Docs**: http://localhost:8000/docs
+   - **Airflow UI**: http://localhost:8080
+   - **Metabase (BI Tool)**: http://localhost:3002
+   - **Test Database**: PostgreSQL on `localhost:5433`
 
-8. **Login to application**:
-   - Use test credentials to log in:
-     - Admin: `admin@test.com` / `admin123`
-     - User: `user@test.com` / `user123`
+8. **Login credentials**:
+
+   **ETL Portal** (http://localhost:3000):
+   - Admin: `admin@test.com` / `admin123`
+   - User: `user@test.com` / `user123`
    - Or configure Google OAuth (see Google Sheets Integration Setup below)
+
+   **Airflow UI** (http://localhost:8080):
+   - Username: `admin`
+   - Password: `admin`
+   - (Configurable via `AIRFLOW_ADMIN_USER` and `AIRFLOW_ADMIN_PASSWORD` in `.env`)
+
+   **Metabase** (http://localhost:3002):
+   - First-time setup required (create admin account on first visit)
 
 ---
 
@@ -795,6 +811,36 @@ Once configured, users can:
 - Automatic type inference and real-time preview
 
 **For detailed setup instructions**, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md)
+
+---
+
+### Metabase Setup (Business Intelligence)
+
+Metabase is automatically configured with a connection to the test database for immediate use.
+
+**Auto-Configuration (Recommended)**:
+- On first startup, Metabase is automatically configured with:
+  - Admin account: `admin@metabase.local` / `metabase123`
+  - Test Database connection (pre-configured)
+  - Access at: http://localhost:3002
+
+**Manual Configuration** (if auto-setup fails):
+1. Navigate to http://localhost:3002
+2. Create an admin account
+3. Add test-db connection:
+   - **Database type**: PostgreSQL
+   - **Name**: Test Database
+   - **Host**: `test-db`
+   - **Port**: `5432`
+   - **Database name**: `test_db`
+   - **Username**: `test_user`
+   - **Password**: `test_password`
+
+**Using Metabase**:
+1. Log in to Metabase
+2. Browse the Test Database to see tables created by your ETL jobs
+3. Create dashboards and visualizations from your ETL data
+4. Set up scheduled reports and alerts
 
 ---
 

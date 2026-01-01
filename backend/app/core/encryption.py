@@ -7,8 +7,6 @@ Provides functions to encrypt and decrypt credentials and other sensitive inform
 import json
 import base64
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from app.core.config import settings
 import structlog
 
@@ -19,28 +17,23 @@ def _get_fernet() -> Fernet:
     """
     Get Fernet instance using the encryption key from settings.
 
-    If no encryption key is set, generates a deterministic key from a default value.
+    Uses the ENCRYPTION_KEY directly as a Fernet key (must be a valid Fernet key).
+    If no encryption key is set, raises an error.
     WARNING: In production, always set a proper ENCRYPTION_KEY environment variable.
     """
     encryption_key = settings.ENCRYPTION_KEY
 
     if not encryption_key:
+        # Generate a temporary key and log warning
+        key = Fernet.generate_key()
         logger.warning(
             "encryption_key_not_set",
-            message="Using default encryption key. Set ENCRYPTION_KEY environment variable in production."
+            message=f"No ENCRYPTION_KEY set. Generated temporary key: {key.decode()}. Set ENCRYPTION_KEY in .env file."
         )
-        encryption_key = "default-insecure-key-change-in-production"
+        return Fernet(key)
 
-    # Derive a 32-byte key using PBKDF2
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=b'etl_portal_salt',  # Fixed salt for deterministic key derivation
-        iterations=100000,
-    )
-    key = base64.urlsafe_b64encode(kdf.derive(encryption_key.encode()))
-
-    return Fernet(key)
+    # Use the encryption key directly (must be a valid base64-encoded Fernet key)
+    return Fernet(encryption_key.encode())
 
 
 def encrypt_credentials(credentials: dict) -> str:
