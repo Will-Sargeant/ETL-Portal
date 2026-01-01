@@ -72,6 +72,7 @@ export interface WizardState {
   jobDescription: string
   batchSize: number
   loadStrategy: LoadStrategy
+  assignedUserId?: number  // Admin-only: assign job to specific user
 
   // Step 3: Destination
   destinationType: DestinationType

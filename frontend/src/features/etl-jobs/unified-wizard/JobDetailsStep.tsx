@@ -3,22 +3,51 @@
  * Configure job name, description, and batch size
  */
 
+import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Info } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { usersApi } from '@/lib/api/users'
 import type { WizardState } from './types'
 
 interface JobDetailsStepProps {
   state: WizardState
   onUpdate: (updates: Partial<WizardState>) => void
   onValidate: () => boolean
+  isEditMode?: boolean
 }
 
-export function JobDetailsStep({ state, onUpdate }: JobDetailsStepProps) {
+export function JobDetailsStep({ state, onUpdate, isEditMode = false }: JobDetailsStepProps) {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
+  // Fetch users list (admin only)
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersApi.list,
+    enabled: isAdmin,
+  })
+
+  // Set default assigned user to current admin if not already set (create mode only)
+  useEffect(() => {
+    if (!isEditMode && isAdmin && user?.id && !state.assignedUserId) {
+      onUpdate({ assignedUserId: user.id })
+    }
+  }, [isEditMode, isAdmin, user?.id, state.assignedUserId, onUpdate])
+
   return (
     <div className="space-y-6">
       <div>
@@ -63,6 +92,30 @@ export function JobDetailsStep({ state, onUpdate }: JobDetailsStepProps) {
                 rows={3}
               />
             </div>
+
+            {isAdmin && (
+              <div className="space-y-2">
+                <Label htmlFor="assign-to">Assign To</Label>
+                <Select
+                  value={state.assignedUserId?.toString() || ''}
+                  onValueChange={(value) => onUpdate({ assignedUserId: parseInt(value) })}
+                >
+                  <SelectTrigger id="assign-to">
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id.toString()}>
+                        {u.email} {u.full_name ? `(${u.full_name})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Assign this job to a specific user
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

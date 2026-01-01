@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey
 import enum
 
 from app.core.database import Base
@@ -31,6 +31,9 @@ class Credential(Base):
     database = Column(String(255), nullable=True)
     username = Column(String(255), nullable=True)
     ssl_mode = Column(String(50), nullable=True, default="prefer")
+
+    # User ownership
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

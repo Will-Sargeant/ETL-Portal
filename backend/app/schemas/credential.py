@@ -20,6 +20,7 @@ class CredentialCreate(BaseModel):
     username: str = Field(..., min_length=1, description="Database username")
     password: str = Field(..., min_length=1, description="Database password")
     ssl_mode: Optional[str] = Field(default="prefer", description="SSL mode (prefer, require, disable)")
+    user_id: Optional[int] = Field(default=None, description="Owner user ID (admin only)")
 
     @validator('port', pre=True)
     def set_default_port(cls, v, values):
@@ -52,6 +53,8 @@ class CredentialResponse(BaseModel):
     database: str
     username: str
     ssl_mode: Optional[str]
+    user_id: Optional[int] = None
+    user_email: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

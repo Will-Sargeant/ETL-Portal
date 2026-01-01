@@ -73,7 +73,8 @@ def generate_ddl(schema: str, table: str, column_mappings: List[ColumnMappingCre
 
 async def create_etl_job(
     db: AsyncSession,
-    job: ETLJobCreate
+    job: ETLJobCreate,
+    user_id: int = None
 ) -> ETLJob:
     """Create a new ETL job with column mappings and optional schedule."""
     # Extract column mappings and schedule
@@ -87,6 +88,10 @@ async def create_etl_job(
         table = job.destination_config.get("table")
         if table:
             job_data["new_table_ddl"] = generate_ddl(schema, table, column_mappings_data)
+
+    # Add user_id
+    if user_id:
+        job_data["user_id"] = user_id
 
     # Create ETL job
     db_job = ETLJob(**job_data)
@@ -304,6 +309,109 @@ async def get_etl_jobs(
                 job.status = "paused"  # Has disabled schedule and been run
         else:
             # Job has no schedule (ad-hoc job)
+            if run_count > 0:
+                job.status = "completed"
+            else:
+                job.status = "draft"
+
+        # Apply status filter AFTER computing status
+        if status and job.status != status:
+            continue
+
+        jobs.append(job)
+
+    return jobs
+
+
+async def get_user_etl_jobs(
+    db: AsyncSession,
+    user_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None
+) -> List[ETLJob]:
+    """Get all ETL jobs for a specific user with last execution date and computed status."""
+    from app.models.schedule import Schedule
+
+    # Subquery to get the latest started_at for each job
+    latest_run_subquery = (
+        select(
+            JobRun.job_id,
+            func.max(JobRun.started_at).label('last_executed_at')
+        )
+        .group_by(JobRun.job_id)
+        .subquery()
+    )
+
+    # Subquery to count job runs for each job
+    run_count_subquery = (
+        select(
+            JobRun.job_id,
+            func.count(JobRun.id).label('run_count')
+        )
+        .group_by(JobRun.job_id)
+        .subquery()
+    )
+
+    # Subquery to check for active schedules (ENABLED only)
+    active_schedule_subquery = (
+        select(
+            Schedule.job_id,
+            func.count(Schedule.id).label('active_schedule_count')
+        )
+        .where(Schedule.enabled == True)
+        .group_by(Schedule.job_id)
+        .subquery()
+    )
+
+    # Subquery for ALL schedules (enabled + disabled)
+    total_schedule_subquery = (
+        select(
+            Schedule.job_id,
+            func.count(Schedule.id).label('total_schedule_count')
+        )
+        .group_by(Schedule.job_id)
+        .subquery()
+    )
+
+    # Main query with left joins and filter by user_id
+    query = (
+        select(
+            ETLJob,
+            latest_run_subquery.c.last_executed_at,
+            func.coalesce(run_count_subquery.c.run_count, 0).label('run_count'),
+            func.coalesce(active_schedule_subquery.c.active_schedule_count, 0).label('active_schedule_count'),
+            func.coalesce(total_schedule_subquery.c.total_schedule_count, 0).label('total_schedule_count')
+        )
+        .where(ETLJob.user_id == user_id)
+        .outerjoin(latest_run_subquery, ETLJob.id == latest_run_subquery.c.job_id)
+        .outerjoin(run_count_subquery, ETLJob.id == run_count_subquery.c.job_id)
+        .outerjoin(active_schedule_subquery, ETLJob.id == active_schedule_subquery.c.job_id)
+        .outerjoin(total_schedule_subquery, ETLJob.id == total_schedule_subquery.c.job_id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(ETLJob.created_at.desc())
+    )
+
+    result = await db.execute(query)
+
+    # Attach last_executed_at and compute status for each job
+    jobs = []
+    for job, last_executed_at, run_count, active_schedule_count, total_schedule_count in result:
+        db.expunge(job)
+        job.last_executed_at = last_executed_at
+
+        # Compute status
+        if job.is_paused:
+            job.status = "paused"
+        elif total_schedule_count > 0:
+            if run_count == 0:
+                job.status = "draft"
+            elif active_schedule_count > 0:
+                job.status = "live"
+            else:
+                job.status = "paused"
+        else:
             if run_count > 0:
                 job.status = "completed"
             else:

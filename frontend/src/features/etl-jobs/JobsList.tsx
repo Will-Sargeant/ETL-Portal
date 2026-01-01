@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Database, Clock, Filter, X } from 'lucide-react'
+import { FileText, Database, Clock, Filter, X, User as UserIcon, Sheet } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { useAuth } from '@/contexts/AuthContext'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -34,13 +35,113 @@ const STATUS_COLORS: Record<JobStatus, string> = {
   paused: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
 }
 
+const FILTERS_STORAGE_KEY = 'etl-jobs-filters'
+
+interface FiltersState {
+  statusFilter: string
+  sourceFilter: string
+  destinationFilter: string
+  tableFilter: string
+  userFilter: string
+  tableSearchQuery: string
+}
+
 export function JobsList({ onViewJob }: JobsListProps) {
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [sourceFilter, setSourceFilter] = useState<string>('all')
-  const [destinationFilter, setDestinationFilter] = useState<string>('all')
-  const [tableFilter, setTableFilter] = useState<string>('all')
-  const [tableSearchQuery, setTableSearchQuery] = useState<string>('')
+  const { user } = useAuth()
+
+  // Load filters from localStorage on mount
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    const stored = localStorage.getItem(FILTERS_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as FiltersState
+        return parsed.statusFilter || 'all'
+      } catch (e) {
+        return 'all'
+      }
+    }
+    return 'all'
+  })
+
+  const [sourceFilter, setSourceFilter] = useState<string>(() => {
+    const stored = localStorage.getItem(FILTERS_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as FiltersState
+        return parsed.sourceFilter || 'all'
+      } catch (e) {
+        return 'all'
+      }
+    }
+    return 'all'
+  })
+
+  const [destinationFilter, setDestinationFilter] = useState<string>(() => {
+    const stored = localStorage.getItem(FILTERS_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as FiltersState
+        return parsed.destinationFilter || 'all'
+      } catch (e) {
+        return 'all'
+      }
+    }
+    return 'all'
+  })
+
+  const [tableFilter, setTableFilter] = useState<string>(() => {
+    const stored = localStorage.getItem(FILTERS_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as FiltersState
+        return parsed.tableFilter || 'all'
+      } catch (e) {
+        return 'all'
+      }
+    }
+    return 'all'
+  })
+
+  const [userFilter, setUserFilter] = useState<string>(() => {
+    const stored = localStorage.getItem(FILTERS_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as FiltersState
+        return parsed.userFilter || 'all'
+      } catch (e) {
+        return 'all'
+      }
+    }
+    return 'all'
+  })
+
+  const [tableSearchQuery, setTableSearchQuery] = useState<string>(() => {
+    const stored = localStorage.getItem(FILTERS_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as FiltersState
+        return parsed.tableSearchQuery || ''
+      } catch (e) {
+        return ''
+      }
+    }
+    return ''
+  })
+
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false)
+
+  // Persist filters to localStorage whenever they change
+  useEffect(() => {
+    const filters: FiltersState = {
+      statusFilter,
+      sourceFilter,
+      destinationFilter,
+      tableFilter,
+      userFilter,
+      tableSearchQuery,
+    }
+    localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters))
+  }, [statusFilter, sourceFilter, destinationFilter, tableFilter, userFilter, tableSearchQuery])
 
   const { data: allJobs, isLoading } = useQuery({
     queryKey: ['etl-jobs', statusFilter],
@@ -49,19 +150,24 @@ export function JobsList({ onViewJob }: JobsListProps) {
     ),
   })
 
-  // Client-side filtering for source, destination types, and table
-  const jobs = allJobs?.filter(job => {
-    const matchesSource = sourceFilter === 'all' || job.source_type === sourceFilter
-    const matchesDestination = destinationFilter === 'all' || job.destination_type === destinationFilter
+  // Client-side filtering for source, destination types, table, and user
+  const jobs = useMemo(() => {
+    return allJobs?.filter(job => {
+      const matchesSource = sourceFilter === 'all' || job.source_type === sourceFilter
+      const matchesDestination = destinationFilter === 'all' || job.destination_type === destinationFilter
 
-    // Table filter: schema.table format
-    const jobTable = job.destination_config?.schema && job.destination_config?.table
-      ? `${job.destination_config.schema}.${job.destination_config.table}`
-      : null
-    const matchesTable = tableFilter === 'all' || jobTable === tableFilter
+      // Table filter: schema.table format
+      const jobTable = job.destination_config?.schema && job.destination_config?.table
+        ? `${job.destination_config.schema}.${job.destination_config.table}`
+        : null
+      const matchesTable = tableFilter === 'all' || jobTable === tableFilter
 
-    return matchesSource && matchesDestination && matchesTable
-  })
+      // User filter
+      const matchesUser = userFilter === 'all' || job.user_id?.toString() === userFilter
+
+      return matchesSource && matchesDestination && matchesTable && matchesUser
+    })
+  }, [allJobs, sourceFilter, destinationFilter, tableFilter, userFilter])
 
   // Get unique source and destination types for filter dropdowns
   const sourceTypes = Array.from(new Set(allJobs?.map(job => job.source_type) || []))
@@ -87,12 +193,25 @@ export function JobsList({ onViewJob }: JobsListProps) {
       )
     : allTables
 
+  // Get unique users from jobs (for filter dropdown)
+  const uniqueUsers = useMemo(() => {
+    if (!allJobs) return []
+    const userMap = new Map<number, string>()
+    allJobs.forEach(job => {
+      if (job.user_id && job.user_email) {
+        userMap.set(job.user_id, job.user_email)
+      }
+    })
+    return Array.from(userMap.entries()).map(([id, email]) => ({ id, email }))
+  }, [allJobs])
+
   // Count active filters
   const activeFilterCount = [
     statusFilter !== 'all',
     sourceFilter !== 'all',
     destinationFilter !== 'all',
     tableFilter !== 'all',
+    userFilter !== 'all',
   ].filter(Boolean).length
 
   const clearAllFilters = () => {
@@ -100,11 +219,14 @@ export function JobsList({ onViewJob }: JobsListProps) {
     setSourceFilter('all')
     setDestinationFilter('all')
     setTableFilter('all')
+    setUserFilter('all')
     setTableSearchQuery('')
   }
 
   const getSourceIcon = (type: string) => {
-    return type === 'csv' ? FileText : Database
+    if (type === 'csv') return FileText
+    if (type === 'google_sheets') return Sheet
+    return Database
   }
 
   // Check if we have any jobs at all vs filtered to zero
@@ -132,13 +254,21 @@ export function JobsList({ onViewJob }: JobsListProps) {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80" align="end">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <h4 className="font-medium text-sm">Filter Jobs</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Narrow down the list of ETL jobs
-                  </p>
-                </div>
+              <div className="space-y-4 max-h-[500px] overflow-y-auto px-1">
+                <h4 className="font-medium text-sm">Filter Jobs</h4>
+
+                {/* Clear Filters Button */}
+                {activeFilterCount > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearAllFilters}
+                    className="w-full gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Clear All Filters
+                  </Button>
+                )}
 
                 {/* Status Filter */}
                 <div className="space-y-2">
@@ -251,17 +381,26 @@ export function JobsList({ onViewJob }: JobsListProps) {
                   )}
                 </div>
 
-                {/* Clear Filters Button */}
-                {activeFilterCount > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={clearAllFilters}
-                    className="w-full gap-2"
-                  >
-                    <X className="w-4 h-4" />
-                    Clear All Filters
-                  </Button>
+                {/* User Filter - Admin Only */}
+                {user?.role === 'admin' && uniqueUsers.length > 0 && (
+                  <div className="space-y-2">
+                    <Label htmlFor="user-filter" className="text-xs font-medium">
+                      Created By
+                    </Label>
+                    <Select value={userFilter} onValueChange={setUserFilter}>
+                      <SelectTrigger id="user-filter">
+                        <SelectValue placeholder="Select user" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Users</SelectItem>
+                        {uniqueUsers.map((u) => (
+                          <SelectItem key={u.id} value={u.id.toString()}>
+                            {u.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
               </div>
             </PopoverContent>
@@ -308,6 +447,15 @@ export function JobsList({ onViewJob }: JobsListProps) {
                 />
               </Badge>
             )}
+            {userFilter !== 'all' && (
+              <Badge variant="secondary" className="gap-1">
+                User: {uniqueUsers.find(u => u.id.toString() === userFilter)?.email}
+                <X
+                  className="w-3 h-3 cursor-pointer hover:text-destructive"
+                  onClick={() => setUserFilter('all')}
+                />
+              </Badge>
+            )}
           </div>
         )}
 
@@ -342,7 +490,7 @@ export function JobsList({ onViewJob }: JobsListProps) {
                     <SourceIcon className="w-8 h-8 text-primary flex-shrink-0" />
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <h4 className="font-medium truncate">{job.name}</h4>
                         <span
                           className={`text-xs px-2 py-0.5 rounded-full ${
@@ -351,6 +499,12 @@ export function JobsList({ onViewJob }: JobsListProps) {
                         >
                           {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
                         </span>
+                        {job.user_email && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground flex items-center gap-1">
+                            <UserIcon className="w-3 h-3" />
+                            {job.user_email}
+                          </span>
+                        )}
                       </div>
 
                       {job.description && (

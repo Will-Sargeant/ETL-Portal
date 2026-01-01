@@ -50,6 +50,7 @@ export interface ETLJobCreate {
   schedule?: ScheduleCreate
   create_new_table?: boolean
   new_table_ddl?: string
+  user_id?: number
 }
 
 export interface ETLJobUpdate {
@@ -78,6 +79,8 @@ export interface ETLJob {
   batch_size: number
   status: JobStatus
   is_paused: boolean
+  user_id?: number
+  user_email?: string
   created_at: string
   updated_at: string
   column_mappings: ColumnMapping[]
@@ -92,6 +95,8 @@ export interface ETLJobListItem {
   destination_config?: Record<string, any>
   status: JobStatus
   is_paused: boolean
+  user_id?: number
+  user_email?: string
   created_at: string
   updated_at: string
   last_executed_at?: string

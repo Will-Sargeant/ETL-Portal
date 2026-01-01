@@ -9,6 +9,7 @@ export interface CredentialCreate {
   username: string
   password: string
   ssl_mode?: string
+  user_id?: number
 }
 
 export interface CredentialUpdate {
@@ -30,6 +31,8 @@ export interface Credential {
   database: string
   username: string
   ssl_mode?: string
+  user_id?: number
+  user_email?: string
   created_at: string
   updated_at: string
 }

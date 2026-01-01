@@ -141,6 +141,9 @@ class ETLJobCreate(BaseModel):
     create_new_table: bool = Field(default=False, description="Create new destination table")
     new_table_ddl: Optional[str] = Field(None, description="DDL for creating new table")
 
+    # User assignment (admin only)
+    user_id: Optional[int] = Field(default=None, description="Owner user ID (admin only)")
+
 
 class ETLJobUpdate(BaseModel):
     """Schema for updating an ETL job."""
@@ -164,6 +167,9 @@ class ETLJobUpdate(BaseModel):
     create_new_table: Optional[bool] = Field(None, description="Create new destination table")
     new_table_ddl: Optional[str] = Field(None, description="DDL for creating new table")
 
+    # User reassignment (admin only)
+    user_id: Optional[int] = Field(default=None, description="Reassign owner (admin only)")
+
 
 class ETLJobResponse(BaseModel):
     """Schema for ETL job response."""
@@ -180,6 +186,8 @@ class ETLJobResponse(BaseModel):
     batch_size: int
     status: JobStatus
     is_paused: bool = False
+    user_id: Optional[int] = None
+    user_email: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     column_mappings: List[ColumnMappingResponse] = []
@@ -198,6 +206,8 @@ class ETLJobListResponse(BaseModel):
     destination_config: Dict[str, Any]
     status: JobStatus
     is_paused: bool = False
+    user_id: Optional[int] = None
+    user_email: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     last_executed_at: Optional[datetime] = None

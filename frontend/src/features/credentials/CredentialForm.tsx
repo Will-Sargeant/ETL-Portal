@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 
@@ -14,6 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { credentialsApi, destinationsApi } from '@/lib/api/credentials'
+import { usersApi } from '@/lib/api/users'
+import { useAuth } from '@/contexts/AuthContext'
 import type { CredentialCreate, DatabaseType, ConnectionTestResponse } from '@/types/credential'
 
 interface CredentialFormProps {
@@ -21,6 +23,9 @@ interface CredentialFormProps {
 }
 
 export function CredentialForm({ onSuccess }: CredentialFormProps) {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   const [formData, setFormData] = useState<CredentialCreate>({
     name: '',
     db_type: 'postgresql',
@@ -30,9 +35,17 @@ export function CredentialForm({ onSuccess }: CredentialFormProps) {
     username: '',
     password: '',
     ssl_mode: 'prefer',
+    user_id: user?.id, // Default to current user
   })
 
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null)
+
+  // Fetch users list (admin only)
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersApi.list,
+    enabled: isAdmin,
+  })
 
   const testMutation = useMutation({
     mutationFn: () => destinationsApi.testConnection(formData),
@@ -64,6 +77,7 @@ export function CredentialForm({ onSuccess }: CredentialFormProps) {
         username: '',
         password: '',
         ssl_mode: 'prefer',
+        user_id: user?.id, // Reset to current user
       })
       setTestResult(null)
       onSuccess?.()
@@ -107,6 +121,27 @@ export function CredentialForm({ onSuccess }: CredentialFormProps) {
                 required
               />
             </div>
+
+            {isAdmin && (
+              <div className="space-y-2">
+                <Label htmlFor="assign-to">Assign To</Label>
+                <Select
+                  value={formData.user_id?.toString() || ''}
+                  onValueChange={(value) => setFormData({ ...formData, user_id: parseInt(value) })}
+                >
+                  <SelectTrigger id="assign-to">
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id.toString()}>
+                        {u.email} {u.full_name ? `(${u.full_name})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="db_type">Database Type *</Label>

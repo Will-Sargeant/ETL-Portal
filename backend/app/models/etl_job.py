@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Enum, Boolean, Text
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Enum, Boolean, Text, ForeignKey
 from sqlalchemy.orm import relationship
 import enum
 
@@ -64,6 +64,9 @@ class ETLJob(Base):
     # Status
     status = Column(Enum(JobStatus), default=JobStatus.DRAFT, index=True)
     is_paused = Column(Boolean, default=False, nullable=False, index=True)
+
+    # User ownership
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

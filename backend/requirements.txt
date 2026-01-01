@@ -5,23 +5,23 @@ python-multipart==0.0.6
 sse-starlette==2.0.0
 
 # Database
-sqlalchemy[asyncio]==2.0.23
-asyncpg==0.29.0
-alembic==1.13.1
-psycopg2-binary==2.9.9
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30.0
+alembic>=1.14.0
+psycopg2-binary>=2.9.10
 
 # Redis
 redis==5.0.1
 aioredis==2.0.1
 
 # Data processing
-pandas==2.1.4
-numpy==1.26.2
+pandas>=2.2.0
+numpy>=1.26.4
 
 # Encryption and security
 cryptography==41.0.7
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+bcrypt>=4.1.0
 
 # Google Sheets (for later)
 google-auth==2.25.2
@@ -34,8 +34,8 @@ redshift-connector==2.0.918
 
 # Utilities
 python-dotenv==1.0.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
 structlog==23.3.0
 httpx==0.25.2
 

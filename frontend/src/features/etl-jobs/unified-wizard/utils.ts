@@ -61,6 +61,7 @@ export function buildJobPayload(state: WizardState): ETLJobCreate {
     schedule,
     create_new_table: state.destinationConfig?.createNewTable,
     new_table_ddl: state.destinationConfig?.newTableDDL,
+    user_id: state.assignedUserId, // Include assigned user if set
   }
 
   return payload

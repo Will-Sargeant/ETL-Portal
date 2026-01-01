@@ -318,12 +318,16 @@ export function ColumnMappingGrid({
               const hasDefault = isTableOnly && mapping.defaultValue
               const isNullableOnly = isTableOnly && mapping.isNullable && !hasDefault
 
+              // Additional validation for new table creation: missing destination type
+              const missingTypeForNewTable = isCreatingNewTable && !isTableOnly && !mapping.exclude &&
+                                            (!mapping.destinationType || mapping.destinationType === '')
+
               return (
                 <div
                   key={idx}
                   className={`grid grid-cols-[auto,1fr,auto,2fr] gap-4 items-start p-3 rounded-lg border-2 ${
                     mapping.exclude ? 'bg-muted/30 opacity-60 border-muted' : 'border-border'
-                  } ${requiresAction ? '!border-red-500 bg-red-50 dark:bg-red-900/20' : ''}`}
+                  } ${requiresAction || missingTypeForNewTable ? '!border-red-500 bg-red-50 dark:bg-red-900/20' : ''}`}
                 >
                   {/* Include/Exclude Checkbox */}
                   <div className="flex items-center pt-1">
@@ -368,11 +372,11 @@ export function ColumnMappingGrid({
                       {/* For CSV columns - show mapping or dropdown */}
                       {!isTableOnly && (
                         <>
-                          {!mapping.exclude && mapping.destinationColumn ? (
+                          {!mapping.exclude && (canEditColumnNames || mapping.destinationColumn) ? (
                             <>
                               {canEditColumnNames ? (
                                 <Input
-                                  value={mapping.destinationColumn}
+                                  value={mapping.destinationColumn || ''}
                                   onChange={(e) => {
                                     const updatedMappings = [...columnMappings]
                                     updatedMappings[idx] = {
@@ -391,7 +395,7 @@ export function ColumnMappingGrid({
                               )}
                               {canEditColumnTypes ? (
                                 <Select
-                                  value={mapping.destinationType || 'TEXT'}
+                                  value={mapping.destinationType || ''}
                                   onValueChange={(value) => {
                                     const updatedMappings = [...columnMappings]
                                     updatedMappings[idx] = {
@@ -401,8 +405,8 @@ export function ColumnMappingGrid({
                                     onChange(updatedMappings)
                                   }}
                                 >
-                                  <SelectTrigger className="w-32">
-                                    <SelectValue />
+                                  <SelectTrigger className={`w-32 ${!mapping.destinationType ? 'border-red-500' : ''}`}>
+                                    <SelectValue placeholder="Select type..." />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {DATA_TYPES.map((type) => (
@@ -596,7 +600,7 @@ export function ColumnMappingGrid({
                         <>
                           {canEditColumnNames ? (
                             <Input
-                              value={mapping.destinationColumn}
+                              value={mapping.destinationColumn || ''}
                               onChange={(e) => {
                                 const tableOnlyIdx = tableOnlyColumns.findIndex(c =>
                                   c.destinationColumn === mapping.destinationColumn &&
@@ -622,7 +626,7 @@ export function ColumnMappingGrid({
                           )}
                           {canEditColumnTypes ? (
                             <Select
-                              value={mapping.destinationType || 'TEXT'}
+                              value={mapping.destinationType || ''}
                               onValueChange={(value) => {
                                 const tableOnlyIdx = tableOnlyColumns.findIndex(c =>
                                   c.destinationColumn === mapping.destinationColumn &&
@@ -639,8 +643,8 @@ export function ColumnMappingGrid({
                                 }
                               }}
                             >
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
+                              <SelectTrigger className={`w-32 ${!mapping.destinationType ? 'border-red-500' : ''}`}>
+                                <SelectValue placeholder="Select type..." />
                               </SelectTrigger>
                               <SelectContent>
                                 {DATA_TYPES.map((type) => (

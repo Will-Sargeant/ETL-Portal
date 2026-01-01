@@ -3,7 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.deps import get_current_active_user
+from app.models.user import User, UserRole
 from app.crud import etl_job as crud
+from app.crud import user as user_crud
 from app.schemas.etl_job import (
     ETLJobCreate,
     ETLJobUpdate,
@@ -23,10 +26,38 @@ router = APIRouter()
 @router.post("/", response_model=ETLJobResponse, status_code=status.HTTP_201_CREATED)
 async def create_job(
     job: ETLJobCreate,
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new ETL job with column mappings."""
+    """
+    Create a new ETL job with column mappings.
+
+    Admins can optionally assign jobs to other users via user_id.
+    """
     try:
+        # Determine the owner of the job
+        owner_id = current_user.id  # Default to current user
+
+        # If admin provided a user_id, validate and use it
+        if job.user_id is not None:
+            if current_user.role == UserRole.ADMIN.value:
+                # Validate that the specified user exists and is active
+                target_user = await user_crud.get_user(db, job.user_id)
+                if not target_user:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"User with ID {job.user_id} not found"
+                    )
+                if not target_user.is_active:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot assign job to inactive user"
+                    )
+                owner_id = job.user_id
+            else:
+                # Non-admin users cannot specify user_id (security)
+                pass  # Silently ignore
+
         # Validate primary key requirements for UPSERT strategy
         if job.load_strategy == "upsert":
             # Get primary key columns from column mappings
@@ -65,7 +96,7 @@ async def create_job(
                            f"Please mark these columns as Primary Keys or select different upsert keys."
                 )
 
-        db_job = await crud.create_etl_job(db, job)
+        db_job = await crud.create_etl_job(db, job, user_id=owner_id)
         return db_job
     except HTTPException:
         raise
@@ -81,16 +112,51 @@ async def list_jobs(
     skip: int = 0,
     limit: int = 100,
     status: Optional[str] = None,
+    user_id: Optional[int] = None,
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all ETL jobs."""
-    jobs = await crud.get_etl_jobs(db, skip=skip, limit=limit, status=status)
-    return jobs
+    """List all ETL jobs. Admins see all, regular users see only their own."""
+    if current_user.role == UserRole.ADMIN.value:
+        if user_id:
+            jobs = await crud.get_user_etl_jobs(db, user_id, skip=skip, limit=limit, status=status)
+        else:
+            jobs = await crud.get_etl_jobs(db, skip=skip, limit=limit, status=status)
+    else:
+        jobs = await crud.get_user_etl_jobs(db, current_user.id, skip=skip, limit=limit, status=status)
+
+    # Fetch user emails for each job
+    from app.crud import user as user_crud
+    result = []
+    for job in jobs:
+        job_dict = {
+            "id": job.id,
+            "name": job.name,
+            "description": job.description,
+            "source_type": job.source_type,
+            "destination_type": job.destination_type,
+            "destination_config": job.destination_config,
+            "status": job.status,
+            "is_paused": job.is_paused,
+            "user_id": job.user_id,
+            "created_at": job.created_at,
+            "updated_at": job.updated_at,
+            "last_executed_at": job.last_executed_at,
+            "user_email": None
+        }
+        if job.user_id:
+            user = await user_crud.get_user(db, job.user_id)
+            if user:
+                job_dict["user_email"] = user.email
+        result.append(job_dict)
+
+    return result
 
 
 @router.get("/{job_id}", response_model=ETLJobResponse)
 async def get_job(
     job_id: int,
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Get an ETL job by ID."""
@@ -102,17 +168,90 @@ async def get_job(
             detail="ETL job not found"
         )
 
-    return db_job
+    # Check ownership or admin
+    if current_user.role != UserRole.ADMIN.value and db_job.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this job")
+
+    # Build response with user email
+    response_dict = {
+        "id": db_job.id,
+        "name": db_job.name,
+        "description": db_job.description,
+        "source_type": db_job.source_type,
+        "source_config": db_job.source_config,
+        "destination_type": db_job.destination_type,
+        "destination_config": db_job.destination_config,
+        "load_strategy": db_job.load_strategy,
+        "upsert_keys": db_job.upsert_keys,
+        "transformation_rules": db_job.transformation_rules,
+        "batch_size": db_job.batch_size,
+        "status": db_job.status,
+        "is_paused": db_job.is_paused,
+        "user_id": db_job.user_id,
+        "user_email": None,
+        "created_at": db_job.created_at,
+        "updated_at": db_job.updated_at,
+        "column_mappings": db_job.column_mappings,
+    }
+
+    # Fetch user email if user_id is set
+    if db_job.user_id:
+        user = await user_crud.get_user(db, db_job.user_id)
+        if user:
+            response_dict["user_email"] = user.email
+
+    return response_dict
 
 
 @router.put("/{job_id}", response_model=ETLJobResponse)
 async def update_job(
     job_id: int,
     job_update: ETLJobUpdate,
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update an ETL job."""
+    """
+    Update an ETL job.
+
+    Admins can reassign job ownership via user_id.
+    """
     try:
+        # Get existing job for ownership check
+        existing_job = await crud.get_etl_job(db, job_id)
+        if not existing_job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="ETL job not found"
+            )
+
+        # Check ownership or admin access
+        if current_user.role != UserRole.ADMIN.value and existing_job.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to modify this job"
+            )
+
+        # Handle user_id reassignment (admin only)
+        if job_update.user_id is not None:
+            if current_user.role == UserRole.ADMIN.value:
+                # Validate that the specified user exists and is active
+                target_user = await user_crud.get_user(db, job_update.user_id)
+                if not target_user:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"User with ID {job_update.user_id} not found"
+                    )
+                if not target_user.is_active:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot assign job to inactive user"
+                    )
+                # user_id will be updated via job_update
+            else:
+                # Non-admin users cannot reassign ownership (security)
+                # Remove user_id from update to prevent unauthorized reassignment
+                job_update.user_id = None
+
         # Validate primary key requirements for UPSERT strategy (if being updated)
         if job_update.load_strategy == "upsert" or (
             job_update.column_mappings is not None and job_update.load_strategy is None
@@ -125,15 +264,6 @@ async def update_job(
                     for col in job_update.column_mappings
                     if col.is_primary_key and not col.exclude and col.destination_column
                 ]
-
-                # Check if this is/will be an UPSERT job
-                # Need to check the existing job to see if it's UPSERT
-                existing_job = await crud.get_etl_job(db, job_id)
-                if not existing_job:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="ETL job not found"
-                    )
 
                 # Determine effective load strategy
                 effective_load_strategy = (

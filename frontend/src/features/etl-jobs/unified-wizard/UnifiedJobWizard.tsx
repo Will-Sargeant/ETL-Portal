@@ -65,6 +65,7 @@ export function UnifiedJobWizard({ existingJob, mode = 'create' }: UnifiedJobWiz
         },
         loadStrategy: existingJob.load_strategy,
         batchSize: existingJob.batch_size || 10000,
+        assignedUserId: existingJob.user_id, // Preserve current owner in edit mode
         columnMappings: (existingJob.column_mappings || []).map((cm) => ({
           sourceColumn: cm.source_column || '',
           destinationColumn: cm.destination_column || '',
@@ -273,7 +274,7 @@ export function UnifiedJobWizard({ existingJob, mode = 'create' }: UnifiedJobWiz
       case 0:
         return <SourceSelectionStep {...commonProps} />
       case 1:
-        return <JobDetailsStep {...commonProps} />
+        return <JobDetailsStep {...commonProps} isEditMode={isEditMode} />
       case 2:
         return <DestinationStep {...commonProps} />
       case 3:

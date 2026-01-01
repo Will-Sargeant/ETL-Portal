@@ -124,6 +124,29 @@ export function validateColumnMapping(state: WizardState): ValidationResult {
     errors.push('At least one column must be mapped (not excluded)')
   }
 
+  // When creating a new table, validate that all non-excluded columns have names and types
+  const isCreatingNewTable = state.destinationConfig?.createNewTable ?? false
+  if (isCreatingNewTable) {
+    const columnsWithMissingNames = activeColumns.filter(
+      (col) => !col.destinationColumn || col.destinationColumn.trim() === ''
+    )
+    const columnsWithMissingTypes = activeColumns.filter(
+      (col) => !col.destinationType || col.destinationType.trim() === ''
+    )
+
+    if (columnsWithMissingNames.length > 0) {
+      errors.push(
+        `When creating a new table, all columns must have a name. ${columnsWithMissingNames.length} column(s) are missing names.`
+      )
+    }
+
+    if (columnsWithMissingTypes.length > 0) {
+      errors.push(
+        `When creating a new table, all columns must have a data type. ${columnsWithMissingTypes.length} column(s) are missing types.`
+      )
+    }
+  }
+
   // Check for duplicate destination column names
   const destinationNames = state.columnMappings
     .filter((col) => !col.exclude && col.destinationColumn)

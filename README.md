@@ -30,6 +30,9 @@ ETL Portal is a web-based platform that enables users to:
 ### Key Features
 
 - 🔐 **Secure Credential Management** - AES-256 encrypted database credentials
+- 🔐 **User Authentication** - Local login (email/password) and Google OAuth with JWT tokens
+- 👥 **User Management** - Admin-only user creation, role assignment, and deactivation
+- 🔑 **Role-Based Access Control** - Admin and user roles with ownership-based permissions
 - 🔄 **Multiple Load Strategies** - INSERT, UPSERT, TRUNCATE_INSERT
 - 📊 **Data Preview** - View and analyze CSV and Google Sheets data before processing
 - 📑 **Google Sheets Integration** - Direct connection to Google Sheets with OAuth authentication
@@ -115,6 +118,152 @@ ETL Portal follows a **microservices architecture** with containerized component
 
 ---
 
+## Authentication & Authorization
+
+ETL Portal uses JWT-based authentication with support for both local credentials and Google OAuth.
+
+### Authentication Methods
+
+#### 1. Local Authentication (Email/Password)
+
+**How it works:**
+1. User submits email and password via login form
+2. Backend verifies credentials using bcrypt password hashing
+3. On success, backend issues JWT access token (30 min) and refresh token (30 days)
+4. Frontend stores tokens in localStorage and includes access token in all API requests
+5. When access token expires, frontend automatically uses refresh token to get new access token
+
+**API Endpoints:**
+- `POST /api/v1/auth/local/login` - Login with email/password
+- `POST /api/v1/auth/refresh` - Refresh access token using refresh token
+- `POST /api/v1/auth/logout` - Revoke refresh token
+
+#### 2. Google OAuth
+
+**How it works:**
+1. User clicks "Sign in with Google" button
+2. Frontend redirects to Google OAuth consent screen
+3. User authorizes the application
+4. Google redirects back with authorization code
+5. Frontend sends code to backend at `/api/v1/auth/google/login`
+6. Backend exchanges code for Google user info
+7. Backend creates user account (first time) or looks up existing user
+8. Backend issues JWT tokens same as local auth
+9. Frontend stores tokens and redirects to app
+
+**First-time Google users:**
+- Automatically created with 'user' role
+- No password required (Google OAuth only)
+- Profile picture synced from Google account
+
+**API Endpoints:**
+- `POST /api/v1/auth/google/login` - Login with Google OAuth code
+
+### User Roles
+
+**Admin Role:**
+- Full access to all resources regardless of owner
+- Can create, view, edit, and delete any ETL jobs or credentials
+- Can manage users (create, deactivate, change roles)
+- Can assign job/credential ownership to any user
+- Pre-seeded admin account: `admin@test.com` / `admin123`
+
+**User Role:**
+- Can only view and manage their own ETL jobs and credentials
+- Cannot access other users' resources
+- Cannot manage users
+- Jobs and credentials automatically assigned to themselves
+- Pre-seeded user account: `user@test.com` / `user123`
+
+### Token System
+
+**Access Token (JWT):**
+- Expiration: 30 minutes
+- Payload: `{ sub: user_id, role: "admin"|"user", exp: timestamp }`
+- Sent in Authorization header: `Bearer <access_token>`
+- Used for all API requests
+
+**Refresh Token (JWT):**
+- Expiration: 30 days
+- Stored in database with revocation capability
+- Used only to obtain new access tokens
+- Automatically revoked on logout
+
+**Token Refresh Flow:**
+1. Frontend detects 401 error (expired access token)
+2. Axios interceptor automatically calls `/api/v1/auth/refresh`
+3. Backend validates refresh token and issues new access token
+4. Frontend retries original request with new token
+5. If refresh token is invalid/expired, user is logged out
+
+### Protected Routes
+
+All API endpoints (except auth endpoints) require valid JWT access token:
+- Unauthenticated requests return 401 Unauthorized
+- Non-admin users accessing admin-only endpoints return 403 Forbidden
+- Users accessing other users' resources return 403 Forbidden
+
+**Admin-Only Endpoints:**
+- `GET /api/v1/users` - List users
+- `POST /api/v1/users` - Create user
+- `PATCH /api/v1/users/{id}/role` - Change user role
+- `DELETE /api/v1/users/{id}` - Deactivate user
+
+**Ownership Checks:**
+- ETL jobs and credentials have `user_id` foreign key
+- Non-admin users can only access records where `user_id` matches their ID
+- Admins bypass ownership checks
+
+### User Management (Admin Only)
+
+Admins can manage users via the Users page (`/users`):
+
+**Create User:**
+- Set email, full name, password (min 8 characters), and role
+- Email must be unique
+- Users created with 'local' auth provider
+- Automatically active on creation
+
+**Change Role:**
+- Admins can promote users to admin or demote admins to user
+- Admins cannot demote themselves (safety check)
+- Role changes take effect immediately
+
+**Deactivate User (Soft Delete):**
+- Sets `is_active = false` in database
+- User cannot log in but data is preserved
+- Admins cannot deactivate themselves (safety check)
+- Deactivated users don't appear in assignment dropdowns
+
+### Development Test Accounts
+
+Two test accounts are automatically seeded during database migrations:
+
+| Email | Password | Role | Use Case |
+|-------|----------|------|----------|
+| admin@test.com | admin123 | admin | Full admin access, user management, view all resources |
+| user@test.com | user123 | user | Regular user access, own resources only |
+
+**To use:**
+1. Start the application
+2. Go to login page (http://localhost:3000)
+3. Enter credentials above
+4. Access token stored in localStorage, valid for 30 minutes
+
+**Security Note:** Change these passwords in production environments by updating the Alembic migration or creating new admin users.
+
+### Security Features
+
+- **Password Hashing:** bcrypt with random salt (cost factor 12)
+- **Token Signing:** HS256 algorithm with SECRET_KEY from environment
+- **Token Expiration:** Access tokens expire after 30 minutes
+- **Token Revocation:** Refresh tokens can be revoked on logout
+- **Input Validation:** Pydantic schemas validate all auth requests
+- **CORS Configuration:** Restricts API access to configured origins
+- **No Password Storage:** Google OAuth users have no password_hash
+
+---
+
 ## Technology Stack
 
 ### Frontend
@@ -138,7 +287,10 @@ ETL Portal follows a **microservices architecture** with containerized component
   - *Note*: Using 1.4 for Airflow compatibility (Airflow 2.10.4 requires <2.0)
 - **Database Driver**: asyncpg - Fast async PostgreSQL driver
 - **Validation**: Pydantic v2 - Data validation with type hints
-- **Authentication**: (Planned) SAML2/Okta integration
+- **Authentication**: JWT-based auth with local login and Google OAuth
+- **Password Hashing**: bcrypt with random salt (cost factor 12)
+- **Token Management**: jose (python-jose) for JWT encoding/decoding
+- **OAuth**: google-auth-oauthlib for Google Sign-In
 - **Logging**: structlog - Structured, JSON-formatted logs
 - **Security**: cryptography - AES-256 credential encryption
 
@@ -546,6 +698,12 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    - Airflow UI: http://localhost:8080 (airflow/airflow)
    - Test Database: Available as **"Test Database"** in Credentials tab
 
+7. **Login to application**:
+   - Use test credentials to log in:
+     - Admin: `admin@test.com` / `admin123`
+     - User: `user@test.com` / `user123`
+   - Or configure Google OAuth (see Google Sheets Integration Setup below)
+
 ---
 
 ### Google Sheets Integration Setup
@@ -864,7 +1022,12 @@ TEST_DB_NAME=test_db
 
 # Security
 ENCRYPTION_KEY=<your-fernet-key>
-SECRET_KEY=<your-secret>
+SECRET_KEY=<your-jwt-secret-key>  # Generate with: openssl rand -hex 32
+
+# Authentication & Google OAuth (Optional - for Google Sign-In)
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
 
 # File Upload
 UPLOAD_DIR=/app/uploads
@@ -1140,6 +1303,10 @@ docker-compose exec airflow-worker airflow dags unpause etl_job_executor
 ✅ Dark mode with system preference detection
 ✅ Advanced job filtering (status, source, destination, table)
 ✅ Searchable table filter for large datasets
+✅ Authentication system (Local + Google OAuth with JWT)
+✅ User management (create, deactivate, role assignment)
+✅ Role-based access control (admin/user permissions)
+✅ User ownership for ETL jobs and credentials
 
 ### In Progress
 
@@ -1147,7 +1314,6 @@ docker-compose exec airflow-worker airflow dags unpause etl_job_executor
 
 ### Planned
 
-📋 Authentication (SAML2/Okta, RBAC)
 📋 Data quality validation rules
 📋 Advanced scheduling options (dependencies, backfilling)
 📋 Email notifications for job failures

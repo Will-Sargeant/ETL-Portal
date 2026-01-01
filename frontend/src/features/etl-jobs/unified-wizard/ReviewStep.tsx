@@ -13,6 +13,8 @@ import { FileText, Database, Columns, Clock, AlertCircle, Eye, EyeOff, Loader2 }
 import { calculateWizardSummary } from './utils'
 import { destinationsApi } from '@/lib/api/credentials'
 import { credentialsApi } from '@/lib/api/credentials'
+import { usersApi } from '@/lib/api/users'
+import { useAuth } from '@/contexts/AuthContext'
 import type { WizardState } from './types'
 
 interface ReviewStepProps {
@@ -22,8 +24,19 @@ interface ReviewStepProps {
 }
 
 export function ReviewStep({ state, onUpdate }: ReviewStepProps) {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const summary = calculateWizardSummary(state)
   const [showDDL, setShowDDL] = useState(false)
+
+  // Fetch users list to display assigned user name
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersApi.list,
+    enabled: isAdmin && !!state.assignedUserId,
+  })
+
+  const assignedUser = users.find(u => u.id === state.assignedUserId)
 
   // Fetch credential to get db_type for DDL generation
   // Need credential for both new tables AND truncate_insert strategy
@@ -145,6 +158,14 @@ export function ReviewStep({ state, onUpdate }: ReviewStepProps) {
                 <span className="text-muted-foreground">Description:</span>
                 <span className="font-medium truncate max-w-[200px]" title={state.jobDescription}>
                   {state.jobDescription}
+                </span>
+              </div>
+            )}
+            {isAdmin && assignedUser && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Assigned To:</span>
+                <span className="font-medium truncate max-w-[200px]" title={assignedUser.email}>
+                  {assignedUser.email}
                 </span>
               </div>
             )}

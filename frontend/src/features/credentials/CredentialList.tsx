@@ -1,10 +1,17 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Database, Trash2, TestTube2, Table2, AlertTriangle } from 'lucide-react'
+import { Database, Trash2, TestTube2, Table2, AlertTriangle, User as UserIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,6 +23,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { credentialsApi, destinationsApi } from '@/lib/api/credentials'
+import { useAuth } from '@/contexts/AuthContext'
 import type { Credential } from '@/types/credential'
 
 interface CredentialListProps {
@@ -24,14 +32,35 @@ interface CredentialListProps {
 }
 
 export function CredentialList({ onSelectCredential, onViewTables }: CredentialListProps) {
+  const { user } = useAuth()
   const queryClient = useQueryClient()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [credentialToDelete, setCredentialToDelete] = useState<{ id: number; name: string } | null>(null)
+  const [userFilter, setUserFilter] = useState<string>('all')
 
   const { data: credentials, isLoading } = useQuery({
     queryKey: ['credentials'],
     queryFn: () => credentialsApi.list(),
   })
+
+  // Filter credentials by user (admin only)
+  const filteredCredentials = useMemo(() => {
+    if (!credentials) return []
+    if (userFilter === 'all' || user?.role !== 'admin') return credentials
+    return credentials.filter(cred => cred.user_id?.toString() === userFilter)
+  }, [credentials, userFilter, user?.role])
+
+  // Get unique users from credentials (for filter dropdown)
+  const uniqueUsers = useMemo(() => {
+    if (!credentials) return []
+    const userMap = new Map<number, string>()
+    credentials.forEach(cred => {
+      if (cred.user_id && cred.user_email) {
+        userMap.set(cred.user_id, cred.user_email)
+      }
+    })
+    return Array.from(userMap.entries()).map(([id, email]) => ({ id, email }))
+  }, [credentials])
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => credentialsApi.delete(id),
@@ -116,14 +145,33 @@ export function CredentialList({ onSelectCredential, onViewTables }: CredentialL
     <>
     <Card>
       <CardHeader>
-        <CardTitle>Saved Credentials</CardTitle>
-        <CardDescription>
-          Manage your database connections
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Saved Credentials</CardTitle>
+            <CardDescription>
+              Manage your database connections
+            </CardDescription>
+          </div>
+          {user?.role === 'admin' && uniqueUsers.length > 0 && (
+            <Select value={userFilter} onValueChange={setUserFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by user" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Users</SelectItem>
+                {uniqueUsers.map((u) => (
+                  <SelectItem key={u.id} value={u.id.toString()}>
+                    {u.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {credentials.map((credential) => (
+          {filteredCredentials.map((credential) => (
             <div
               key={credential.id}
               className="flex items-center gap-4 p-4 border rounded-lg hover:bg-muted/30 transition-colors"
@@ -131,11 +179,17 @@ export function CredentialList({ onSelectCredential, onViewTables }: CredentialL
               <Database className="w-8 h-8 text-primary flex-shrink-0" />
 
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h4 className="font-medium truncate">{credential.name}</h4>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${getDbTypeColor(credential.db_type)}`}>
                     {getDbTypeLabel(credential.db_type)}
                   </span>
+                  {credential.user_email && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground flex items-center gap-1">
+                      <UserIcon className="w-3 h-3" />
+                      {credential.user_email}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground truncate">
                   {credential.username}@{credential.host}:{credential.port}/{credential.database}

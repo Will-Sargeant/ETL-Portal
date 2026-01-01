@@ -33,7 +33,8 @@ def build_connection_string(
 
 async def create_credential(
     db: AsyncSession,
-    credential: CredentialCreate
+    credential: CredentialCreate,
+    user_id: int = None
 ) -> Credential:
     """Create a new credential."""
     # Build connection string
@@ -60,6 +61,7 @@ async def create_credential(
         database=credential.database,
         username=credential.username,
         ssl_mode=credential.ssl_mode,
+        user_id=user_id
     )
 
     db.add(db_credential)
@@ -85,6 +87,23 @@ async def get_credentials(
     """Get all credentials."""
     result = await db.execute(
         select(Credential).offset(skip).limit(limit).order_by(Credential.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_user_credentials(
+    db: AsyncSession,
+    user_id: int,
+    skip: int = 0,
+    limit: int = 100
+) -> List[Credential]:
+    """Get all credentials for a specific user."""
+    result = await db.execute(
+        select(Credential)
+        .where(Credential.user_id == user_id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(Credential.created_at.desc())
     )
     return list(result.scalars().all())
 

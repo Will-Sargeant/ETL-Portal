@@ -1,70 +1,49 @@
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
-import { Database, Home, Workflow } from 'lucide-react'
 import { HomePage } from './pages/HomePage'
 import { CredentialsPage } from './pages/CredentialsPage'
 import { ETLJobsPage } from './pages/ETLJobsPage'
 import { JobDetailsPage } from './pages/JobDetailsPage'
 import { JobEditPage } from './pages/JobEditPage'
 import { UnifiedJobWizardPage } from './pages/UnifiedJobWizardPage'
+import { UsersPage } from './pages/UsersPage'
 import { GoogleCallback } from './pages/GoogleCallback'
+import { LoginPage } from './features/auth/LoginPage'
+import { ProtectedRoute } from './features/auth/ProtectedRoute'
+import { MainLayout } from './components/MainLayout'
 import { useTheme } from './hooks/useTheme'
-import { ThemeToggle } from './components/ThemeToggle'
+import { AuthProvider } from './contexts/AuthContext'
 
 function App() {
   useTheme() // Initialize theme system
 
   return (
-    <Router>
-      <div className="min-h-screen bg-background">
-        <nav className="border-b">
-          <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-6">
-                <Link to="/" className="font-bold text-xl">
-                  ETL Portal
-                </Link>
-                <div className="flex gap-4">
-                  <Link
-                    to="/"
-                    className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                  >
-                    <Home className="w-4 h-4" />
-                    Home
-                  </Link>
-                  <Link
-                    to="/credentials"
-                    className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                  >
-                    <Database className="w-4 h-4" />
-                    Credentials
-                  </Link>
-                  <Link
-                    to="/jobs"
-                    className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                  >
-                    <Workflow className="w-4 h-4" />
-                    ETL Jobs
-                  </Link>
-                </div>
-              </div>
-              <ThemeToggle />
-            </div>
-          </div>
-        </nav>
-
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/credentials" element={<CredentialsPage />} />
-          <Route path="/jobs" element={<ETLJobsPage />} />
-          <Route path="/jobs/new" element={<UnifiedJobWizardPage />} />
-          <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
-          <Route path="/jobs/:jobId/edit" element={<JobEditPage />} />
-          <Route path="/auth/google/callback" element={<GoogleCallback />} />
-        </Routes>
-        <Toaster />
-      </div>
-    </Router>
+    <AuthProvider>
+      <Router>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/google/callback" element={<GoogleCallback />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<HomePage />} />
+          <Route path="credentials" element={<CredentialsPage />} />
+          <Route path="jobs" element={<ETLJobsPage />} />
+          <Route path="jobs/new" element={<UnifiedJobWizardPage />} />
+          <Route path="jobs/:jobId" element={<JobDetailsPage />} />
+          <Route path="jobs/:jobId/edit" element={<JobEditPage />} />
+          <Route path="users" element={<UsersPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <Toaster />
+      </Router>
+    </AuthProvider>
   )
 }
 

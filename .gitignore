@@ -81,6 +81,8 @@ docker-compose.override.yml
 # Airflow
 airflow/dags/__pycache__/
 airflow/plugins/__pycache__/
+# Ignore generated ETL job DAG files (keep only etl_job_executor.py)
+airflow/dags/etl_job_[0-9]*_scheduled.py
 
 # Alembic
 alembic/versions/*.pyc
