@@ -315,7 +315,18 @@ export function GoogleSheetsPreviewTab({ job }: GoogleSheetsPreviewTabProps) {
                     <tr key={idx} className="hover:bg-muted/30">
                       {/* Row number cell */}
                       <td className="px-4 py-3 text-xs font-mono text-muted-foreground text-center sticky left-0 bg-gray-100 dark:bg-gray-800/50 border-r">
-                        {(rangeConfig.start_row || 1) + idx}
+                        {(() => {
+                          const startRow = rangeConfig.start_row || 1
+                          const headerRow = rangeConfig.header_row
+
+                          // If header_row is specified and it's before start_row, data starts at start_row
+                          // Otherwise, data starts the row after the header
+                          if (headerRow !== undefined && headerRow < startRow) {
+                            return startRow + idx
+                          } else {
+                            return (headerRow || startRow) + idx + 1
+                          }
+                        })()}
                       </td>
 
                       {/* Data cells */}
