@@ -287,8 +287,8 @@ Two test accounts are automatically seeded during database migrations:
   - *Note*: Using 1.4 for Airflow compatibility (Airflow 2.10.4 requires <2.0)
 - **Database Driver**: asyncpg - Fast async PostgreSQL driver
 - **Validation**: Pydantic v2 - Data validation with type hints
-- **Authentication**: JWT-based auth with local login and Google OAuth
-- **Password Hashing**: bcrypt with random salt (cost factor 12)
+- **Authentication**: JWT-based auth with local login and Google OAuth SSO (untested/incomplete)
+- **Password Hashing**: bcrypt with random salt (default cost factor 10)
 - **Token Management**: jose (python-jose) for JWT encoding/decoding
 - **OAuth**: google-auth-oauthlib for Google Sign-In
 - **Logging**: structlog - Structured, JSON-formatted logs
