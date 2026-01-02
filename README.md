@@ -733,7 +733,7 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    - Password: `admin`
    - (Configurable via `AIRFLOW_ADMIN_USER` and `AIRFLOW_ADMIN_PASSWORD` in `.env`)
 
-   **Metabase** (http://localhost:3002):
+   **Metabase** (http://localhost:3002/auth/login):
    - Auto-configured with admin account: `admin@metabase.local` / `metabase123`
    - Test Database connection pre-configured
    - (See Metabase Setup section below for manual configuration if needed)
@@ -782,14 +782,16 @@ To enable Google Sheets as a data source, configure Google Cloud OAuth 2.0 crede
 #### 4. Configure ETL Portal
 
 1. Open `.env` file in the project root
-2. Add Google OAuth credentials:
+2. Update the Google OAuth credentials (already present in `.env.example`):
    ```bash
    # Google OAuth Configuration
-   GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret-here
+   GOOGLE_CLIENT_ID=your-actual-client-id.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-your-actual-client-secret
    GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
    ```
-3. Restart backend:
+   Replace `your-actual-client-id` and `your-actual-client-secret` with the values from step 3.
+
+3. Restart backend to apply changes:
    ```bash
    docker-compose restart backend
    ```
@@ -811,8 +813,6 @@ Once configured, users can:
 - Users can only access their own spreadsheets
 - Credentials are encrypted and stored per-job
 - Automatic type inference and real-time preview
-
-**For detailed setup instructions**, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md)
 
 ---
 

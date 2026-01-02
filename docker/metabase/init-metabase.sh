@@ -100,15 +100,22 @@ fi
 
 # At this point, we have a SESSION token (either from existing login or new setup)
 
-# First, remove the Sample Database if it exists
-echo "Removing Sample Database (H2) if it exists..."
+# Wait a bit for Sample Database to be created (if it's going to be)
+echo "Checking for Sample Database..."
+sleep 5
+
+# Remove the Sample Database if it exists
+# Look for Sample Database and extract its ID (usually ID 1)
 SAMPLE_DB_ID=$(curl -s http://metabase:3000/api/database \
-  -H "X-Metabase-Session: $SESSION" | grep -o '"name":"Sample Database","id":[0-9]*' | grep -o '[0-9]*$' || echo "")
+  -H "X-Metabase-Session: $SESSION" | grep -o '"id":[0-9]*[^}]*"name":"Sample Database"' | grep -o '"id":[0-9]*' | grep -o '[0-9]*' || echo "")
 
 if [ -n "$SAMPLE_DB_ID" ]; then
+    echo "Removing Sample Database (H2)..."
     curl -s -X DELETE "http://metabase:3000/api/database/$SAMPLE_DB_ID" \
       -H "X-Metabase-Session: $SESSION" > /dev/null
     echo "✓ Removed Sample Database"
+else
+    echo "✓ No Sample Database found (already disabled)"
 fi
 
 # Now add the Test Database connection
