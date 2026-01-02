@@ -11,6 +11,55 @@ interface GoogleSheetsPreviewTabProps {
   job: ETLJob
 }
 
+// Convert range configuration to Google Sheets A1 notation
+const getRangeA1Notation = (rangeConfig: {
+  start_row?: number
+  header_row?: number
+  end_row?: number
+  start_column?: string
+  end_column?: string
+}): string => {
+  const startCol = rangeConfig.start_column || 'A'
+  const startRow = rangeConfig.start_row || 1
+  const endCol = rangeConfig.end_column || ''
+  const endRow = rangeConfig.end_row || ''
+
+  // Build the A1 notation
+  if (endCol && endRow) {
+    return `${startCol}${startRow}:${endCol}${endRow}`
+  } else if (endCol) {
+    return `${startCol}${startRow}:${endCol}`
+  } else if (endRow) {
+    return `${startCol}${startRow}:${endRow}`
+  } else {
+    return `${startCol}${startRow}:*`
+  }
+}
+
+// Convert column letter to index (A -> 0, B -> 1, Z -> 25, AA -> 26)
+const columnLetterToIndex = (letter: string): number => {
+  let index = 0
+  for (let i = 0; i < letter.length; i++) {
+    index = index * 26 + (letter.charCodeAt(i) - 64)
+  }
+  return index - 1
+}
+
+// Convert column index to Excel-style letter (0 -> A, 1 -> B, ..., 25 -> Z, 26 -> AA)
+const getColumnLetter = (index: number, startColumn: string = 'A'): string => {
+  // Calculate the actual column index based on start column
+  const startIndex = columnLetterToIndex(startColumn)
+  const actualIndex = startIndex + index
+
+  let letter = ''
+  let num = actualIndex
+  while (num >= 0) {
+    letter = String.fromCharCode((num % 26) + 65) + letter
+    num = Math.floor(num / 26) - 1
+  }
+  return letter
+}
+
 const getDataTypeBadge = (dataType: string) => {
   const colors = {
     number: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -27,13 +76,23 @@ export function GoogleSheetsPreviewTab({ job }: GoogleSheetsPreviewTabProps) {
   const sheetName = job.source_config?.sheet_name
   const credentials = job.source_config?.encrypted_credentials
 
+  // Extract range configuration from job
+  const rangeConfig = {
+    start_row: job.source_config?.start_row,
+    header_row: job.source_config?.header_row,
+    end_row: job.source_config?.end_row,
+    start_column: job.source_config?.start_column,
+    end_column: job.source_config?.end_column,
+  }
+
   const { data: preview, isLoading, error, refetch, isRefetching } = useQuery({
-    queryKey: ['google-sheets-preview', spreadsheetId, sheetName],
+    queryKey: ['google-sheets-preview', spreadsheetId, sheetName, rangeConfig],
     queryFn: async () => {
       const response = await apiClient.post('/google/sheets/preview', {
         spreadsheet_id: spreadsheetId,
         sheet_name: sheetName,
         encrypted_credentials: credentials,
+        ...rangeConfig,
       })
       return response.data
     },
@@ -134,6 +193,61 @@ export function GoogleSheetsPreviewTab({ job }: GoogleSheetsPreviewTabProps) {
           </div>
         </div>
 
+        {/* Range Configuration Display */}
+        {(rangeConfig.start_row !== undefined && rangeConfig.start_row !== 1) ||
+         rangeConfig.header_row ||
+         rangeConfig.end_row ||
+         (rangeConfig.start_column && rangeConfig.start_column !== 'A') ||
+         rangeConfig.end_column ? (
+          <div className="mb-6 p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900">
+            <h4 className="text-sm font-semibold mb-3 text-blue-900 dark:text-blue-100">
+              📊 Custom Range Configuration
+            </h4>
+            {/* A1 Notation Display */}
+            <div className="mb-3 p-3 bg-blue-100 dark:bg-blue-900/50 rounded border border-blue-300 dark:border-blue-800">
+              <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">Google Sheets Range</p>
+              <p className="text-lg font-bold font-mono text-blue-900 dark:text-blue-100">
+                {getRangeA1Notation(rangeConfig)}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+              {rangeConfig.start_row !== undefined && rangeConfig.start_row !== 1 && (
+                <div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">Start Row</p>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">{rangeConfig.start_row}</p>
+                </div>
+              )}
+              {rangeConfig.header_row && (
+                <div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">Header Row</p>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">{rangeConfig.header_row}</p>
+                </div>
+              )}
+              {rangeConfig.end_row && (
+                <div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">End Row</p>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">{rangeConfig.end_row}</p>
+                </div>
+              )}
+              {rangeConfig.start_column && rangeConfig.start_column !== 'A' && (
+                <div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">Start Column</p>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">{rangeConfig.start_column}</p>
+                </div>
+              )}
+              {rangeConfig.end_column && (
+                <div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">End Column</p>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">{rangeConfig.end_column}</p>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-blue-600 dark:text-blue-400 mt-3">
+              ℹ️ This job reads a custom range from the spreadsheet. The preview above reflects this configuration.
+            </p>
+          </div>
+        ) : null}
+
         {/* Column Information */}
         {columns.length > 0 && (
           <div className="mb-6">
@@ -163,16 +277,34 @@ export function GoogleSheetsPreviewTab({ job }: GoogleSheetsPreviewTabProps) {
           <div className="border rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-xs uppercase tracking-wider text-muted-foreground w-12">
-                      #
+                <thead>
+                  {/* Column letter row (like Google Sheets) */}
+                  <tr className="border-b bg-gray-100 dark:bg-gray-800/50">
+                    {/* Empty corner cell */}
+                    <th className="px-4 py-2 text-center font-medium text-xs w-16 sticky left-0 bg-gray-100 dark:bg-gray-800/50 border-r border-b">
+                      <span className="text-muted-foreground"></span>
                     </th>
+
+                    {/* Column letters */}
+                    {columns.map((col, idx) => (
+                      <th key={`letter-${col}`} className="px-4 py-2 text-center font-medium text-xs bg-gray-100 dark:bg-gray-800/50">
+                        <span className="text-muted-foreground font-mono">
+                          {getColumnLetter(idx, rangeConfig.start_column || 'A')}
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+
+                  {/* Header row with column names */}
+                  <tr className="bg-muted/50">
+                    {/* Header row number */}
+                    <th className="px-4 py-3 text-center font-medium text-xs w-16 sticky left-0 bg-gray-100 dark:bg-gray-800/50 border-r">
+                      <span className="text-muted-foreground font-mono">{rangeConfig.header_row || rangeConfig.start_row || 1}</span>
+                    </th>
+
+                    {/* Column names */}
                     {columns.map((colName) => (
-                      <th
-                        key={colName}
-                        className="px-4 py-3 text-left font-medium"
-                      >
+                      <th key={colName} className="px-4 py-3 text-left font-medium">
                         <div className="truncate">{colName}</div>
                       </th>
                     ))}
@@ -181,9 +313,12 @@ export function GoogleSheetsPreviewTab({ job }: GoogleSheetsPreviewTabProps) {
                 <tbody className="divide-y">
                   {rows.map((row, idx) => (
                     <tr key={idx} className="hover:bg-muted/30">
-                      <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
-                        {idx + 1}
+                      {/* Row number cell */}
+                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground text-center sticky left-0 bg-gray-100 dark:bg-gray-800/50 border-r">
+                        {(rangeConfig.start_row || 1) + idx}
                       </td>
+
+                      {/* Data cells */}
                       {columns.map((colName) => (
                         <td key={colName} className="px-4 py-3">
                           {row[colName] === null || row[colName] === undefined || row[colName] === '' ? (

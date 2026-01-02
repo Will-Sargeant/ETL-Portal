@@ -176,10 +176,57 @@ class GoogleSheetsService:
         if header_row is None:
             header_row = start_row
 
+        # Validate range configuration
+        if end_row is not None and start_row > end_row:
+            raise ValueError(
+                f"Invalid row range: Start row ({start_row}) cannot be greater than end row ({end_row})"
+            )
+
+        if end_column is not None:
+            # Convert column letters to indices for comparison
+            def column_to_index(letter: str) -> int:
+                """Convert column letter to 0-based index (A=0, B=1, Z=25, AA=26)"""
+                index = 0
+                for char in letter.upper():
+                    index = index * 26 + (ord(char) - ord('A') + 1)
+                return index - 1
+
+            start_col_idx = column_to_index(start_column)
+            end_col_idx = column_to_index(end_column)
+
+            if start_col_idx > end_col_idx:
+                raise ValueError(
+                    f"Invalid column range: Start column ({start_column}) cannot be after end column ({end_column})"
+                )
+
         try:
             service = build('sheets', 'v4', credentials=credentials)
 
-            # Build range string
+            # Check if we need to fetch the header separately (when header_row < start_row)
+            headers = None
+            if header_row < start_row:
+                # Fetch header row separately
+                header_range = f"'{sheet_name}'!{start_column}{header_row}:{end_column if end_column else ''}{header_row}"
+                header_result = service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=header_range
+                ).execute()
+                header_values = header_result.get('values', [])
+                if header_values:
+                    headers = header_values[0]
+                else:
+                    raise ValueError(
+                        f"Header row {header_row} is empty or not found. "
+                        f"Please verify the header row number is correct."
+                    )
+
+                logger.debug(
+                    "fetched_separate_header",
+                    header_row=header_row,
+                    headers=headers
+                )
+
+            # Build range string for data
             # Note: Google Sheets API behaves inconsistently with open-ended ranges like "Sheet1!A1"
             # It may only return the first column. Using just the sheet name returns all data reliably.
             if end_column or end_row:
@@ -219,19 +266,27 @@ class GoogleSheetsService:
                 )
                 return pd.DataFrame()
 
-            # Calculate header row index relative to fetched data
-            header_idx = header_row - start_row
+            # If we haven't fetched headers separately, extract them from the data
+            if headers is None:
+                # Calculate header row index relative to fetched data
+                header_idx = header_row - start_row
 
-            # Ensure header_idx is within bounds
-            if header_idx < 0 or header_idx >= len(values):
-                raise ValueError(f"Header row {header_row} is outside the fetched range (rows {start_row} to {start_row + len(values) - 1})")
+                # Ensure header_idx is within bounds
+                if header_idx < 0 or header_idx >= len(values):
+                    raise ValueError(
+                        f"Header row {header_row} not found in the fetched data range (rows {start_row} to {start_row + len(values) - 1}). "
+                        f"The sheet may have fewer rows than expected, or your End Row setting is too restrictive."
+                    )
 
-            # Extract headers from specified row
-            headers = values[header_idx]
+                # Extract headers from specified row
+                headers = values[header_idx]
 
-            # Get data rows (all rows after header row)
-            data_start_idx = header_idx + 1
-            all_data_rows = values[data_start_idx:]
+                # Get data rows (all rows after header row)
+                data_start_idx = header_idx + 1
+                all_data_rows = values[data_start_idx:]
+            else:
+                # Headers were fetched separately, so all values are data
+                all_data_rows = values
 
             # Apply max_rows limit if specified (for preview)
             data_rows = all_data_rows[:max_rows] if max_rows else all_data_rows
@@ -256,7 +311,8 @@ class GoogleSheetsService:
 
             return df
 
-        except Exception as e:
+        except ValueError as e:
+            # Re-raise validation errors with original message
             logger.error(
                 "failed_to_fetch_sheet_data",
                 spreadsheet_id=spreadsheet_id,
@@ -265,6 +321,45 @@ class GoogleSheetsService:
                 error=str(e)
             )
             raise
+        except Exception as e:
+            # Handle Google API errors with user-friendly messages
+            error_message = str(e).lower()
+            logger.error(
+                "failed_to_fetch_sheet_data",
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                range=range_name if 'range_name' in locals() else 'unknown',
+                error=str(e)
+            )
+
+            # Provide helpful error messages based on common Google API errors
+            if '404' in error_message or 'not found' in error_message:
+                raise ValueError(
+                    f"Sheet '{sheet_name}' not found in the spreadsheet. "
+                    f"Please verify the sheet name is correct (names are case-sensitive)."
+                )
+            elif '403' in error_message or 'permission denied' in error_message:
+                raise ValueError(
+                    "Permission denied. Please ensure:\n"
+                    "1. The spreadsheet is shared with your Google account\n"
+                    "2. You have at least 'Viewer' access to the spreadsheet\n"
+                    "3. Your OAuth credentials are still valid (try re-authenticating)"
+                )
+            elif 'invalid' in error_message and 'range' in error_message:
+                raise ValueError(
+                    f"Invalid range specification. Please check that:\n"
+                    f"- Column letters are valid (A-Z, AA-ZZ, etc.)\n"
+                    f"- Row numbers are positive integers\n"
+                    f"- End row/column comes after start row/column"
+                )
+            elif 'quota' in error_message or 'rate limit' in error_message:
+                raise ValueError(
+                    "Google Sheets API quota exceeded. Please wait a moment and try again. "
+                    "If this persists, consider reducing the frequency of requests."
+                )
+            else:
+                # Re-raise original exception if not a recognized error
+                raise
 
 
 # Singleton instance

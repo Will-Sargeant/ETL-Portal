@@ -38,9 +38,57 @@ interface RangeConfig {
 interface GoogleSheetSelectorProps {
   credentials: string
   onSelect: (spreadsheetId: string, sheetName: string, columns: string[], rangeConfig?: RangeConfig) => void
+  initialConfig?: {
+    spreadsheetId?: string
+    sheetName?: string
+    rangeConfig?: RangeConfig
+  }
 }
 
-export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelectorProps) {
+// Convert column letter to index (A -> 0, B -> 1, Z -> 25, AA -> 26)
+const columnLetterToIndex = (letter: string): number => {
+  let index = 0
+  for (let i = 0; i < letter.length; i++) {
+    index = index * 26 + (letter.charCodeAt(i) - 64)
+  }
+  return index - 1
+}
+
+// Convert column index to Excel-style letter (0 -> A, 1 -> B, ..., 25 -> Z, 26 -> AA)
+const getColumnLetter = (index: number, startColumn: string = 'A'): string => {
+  // Calculate the actual column index based on start column
+  const startIndex = columnLetterToIndex(startColumn)
+  const actualIndex = startIndex + index
+
+  let letter = ''
+  let num = actualIndex
+  while (num >= 0) {
+    letter = String.fromCharCode((num % 26) + 65) + letter
+    num = Math.floor(num / 26) - 1
+  }
+  return letter
+}
+
+// Convert range configuration to Google Sheets A1 notation
+const getRangeA1Notation = (rangeConfig: RangeConfig): string => {
+  const startCol = rangeConfig.start_column || 'A'
+  const startRow = rangeConfig.start_row || 1
+  const endCol = rangeConfig.end_column || ''
+  const endRow = rangeConfig.end_row || ''
+
+  // Build the A1 notation
+  if (endCol && endRow) {
+    return `${startCol}${startRow}:${endCol}${endRow}`
+  } else if (endCol) {
+    return `${startCol}${startRow}:${endCol}`
+  } else if (endRow) {
+    return `${startCol}${startRow}:${endRow}`
+  } else {
+    return `${startCol}${startRow}:*`
+  }
+}
+
+export function GoogleSheetSelector({ credentials, onSelect, initialConfig }: GoogleSheetSelectorProps) {
   const [allSpreadsheets, setAllSpreadsheets] = useState<Spreadsheet[]>([])
   const [recentSpreadsheets, setRecentSpreadsheets] = useState<Spreadsheet[]>([])
   const [filteredSpreadsheets, setFilteredSpreadsheets] = useState<Spreadsheet[]>([])
@@ -59,9 +107,35 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
   // Range configuration
   const [rangeConfig, setRangeConfig] = useState<RangeConfig>({
     start_row: 1,
-    header_row: 1,
+    header_row: undefined, // Will default to start_row on backend
   })
   const [showAdvancedRange, setShowAdvancedRange] = useState(false)
+  const [rangeValidationError, setRangeValidationError] = useState<string | null>(null)
+
+  // Restore previous selections when user navigates back to this step
+  useEffect(() => {
+    if (initialConfig?.spreadsheetId && initialConfig?.sheetName) {
+      setSelectedSpreadsheet(initialConfig.spreadsheetId)
+      setSelectedSheet(initialConfig.sheetName)
+
+      // Auto-load sheets for the restored selection
+      loadSheets(initialConfig.spreadsheetId)
+
+      if (initialConfig.rangeConfig) {
+        setRangeConfig(initialConfig.rangeConfig)
+        // Show advanced range if any non-default values are set
+        if (initialConfig.rangeConfig.end_row ||
+            initialConfig.rangeConfig.start_column !== 'A' ||
+            initialConfig.rangeConfig.end_column) {
+          setShowAdvancedRange(true)
+        }
+      }
+
+      loadPreview(initialConfig.spreadsheetId, initialConfig.sheetName, initialConfig.rangeConfig)
+    }
+    // Only run once on mount - do not re-run when initialConfig changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load recent spreadsheets on mount
   useEffect(() => {
@@ -102,8 +176,46 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
     }
   }, [selectedSpreadsheet, selectedSheet])
 
+  // Validate range whenever it changes
+  useEffect(() => {
+    const error = validateRange(rangeConfig)
+    setRangeValidationError(error)
+  }, [rangeConfig])
+
+  // Validate range configuration
+  const validateRange = (config: RangeConfig): string | null => {
+    // Validate row range
+    if (config.end_row !== undefined && config.start_row !== undefined) {
+      if (config.start_row > config.end_row) {
+        return `Invalid row range: Start row (${config.start_row}) cannot be greater than end row (${config.end_row})`
+      }
+    }
+
+    // Validate column range
+    if (config.end_column && config.start_column) {
+      const startColIndex = columnLetterToIndex(config.start_column)
+      const endColIndex = columnLetterToIndex(config.end_column)
+      if (startColIndex > endColIndex) {
+        return `Invalid column range: Start column (${config.start_column}) cannot be after end column (${config.end_column})`
+      }
+    }
+
+    return null // No errors
+  }
+
   // Function to refresh preview with current range config
   const refreshPreview = () => {
+    // Validate before refreshing
+    const error = validateRange(rangeConfig)
+    setRangeValidationError(error)
+
+    if (error) {
+      toast.error('Invalid range configuration', {
+        description: error,
+      })
+      return
+    }
+
     if (selectedSpreadsheet && selectedSheet) {
       loadPreview(selectedSpreadsheet, selectedSheet, rangeConfig)
     }
@@ -275,7 +387,7 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
             <SelectTrigger>
               <SelectValue placeholder="Select a spreadsheet..." />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[300px] overflow-auto">
               {displaySpreadsheets.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   <div className="flex items-center justify-between w-full">
@@ -335,85 +447,162 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Configure custom ranges for sheets with headers not in row 1, or to exclude certain rows/columns.
+                <strong>Use custom ranges when:</strong>
+                <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+                  <li>Your data doesn't start at row 1 or column A</li>
+                  <li>You want to exclude certain rows or columns</li>
+                  <li>You need to read only a specific portion of the sheet</li>
+                </ul>
               </AlertDescription>
             </Alert>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="start-row">Start Row</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="start-row" className="flex items-center gap-2">
+                  Start Row <span className="text-xs text-muted-foreground font-normal">(required)</span>
+                </Label>
                 <Input
                   id="start-row"
                   type="number"
                   min={1}
                   value={rangeConfig.start_row || 1}
-                  onChange={(e) => setRangeConfig({ ...rangeConfig, start_row: parseInt(e.target.value) || 1 })}
+                  onChange={(e) => {
+                    const startRow = parseInt(e.target.value) || 1
+                    setRangeConfig({
+                      ...rangeConfig,
+                      start_row: startRow,
+                      // Auto-sync: If header_row is undefined or equals old start_row, update it
+                      header_row: rangeConfig.header_row === rangeConfig.start_row || !rangeConfig.header_row
+                        ? undefined  // Let backend default to start_row
+                        : rangeConfig.header_row
+                    })
+                  }}
                   placeholder="1"
+                  className="font-mono"
                 />
-                <p className="text-xs text-muted-foreground mt-1">First row to read (1-indexed)</p>
+                <p className="text-xs text-muted-foreground">
+                  First row to read. Headers default to this row unless specified below.
+                </p>
               </div>
 
-              <div>
-                <Label htmlFor="header-row">Header Row</Label>
+              <div className="space-y-2">
+                <Label htmlFor="header-row" className="flex items-center gap-2">
+                  Header Row <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                </Label>
                 <Input
                   id="header-row"
                   type="number"
                   min={1}
-                  value={rangeConfig.header_row || 1}
-                  onChange={(e) => setRangeConfig({ ...rangeConfig, header_row: parseInt(e.target.value) || 1 })}
-                  placeholder="1"
+                  value={rangeConfig.header_row !== undefined ? rangeConfig.header_row : rangeConfig.start_row || 1}
+                  onChange={(e) => {
+                    const headerRow = e.target.value ? parseInt(e.target.value) : undefined
+                    setRangeConfig({ ...rangeConfig, header_row: headerRow })
+                  }}
+                  placeholder={`Defaults to row ${rangeConfig.start_row || 1}`}
+                  className="font-mono"
                 />
-                <p className="text-xs text-muted-foreground mt-1">Row containing column headers</p>
+                <p className="text-xs text-muted-foreground">
+                  Row with column names. Leave empty to use Start Row.
+                </p>
               </div>
 
-              <div>
-                <Label htmlFor="end-row">End Row (Optional)</Label>
+              <div className="space-y-2">
+                <Label htmlFor="end-row" className="flex items-center gap-2">
+                  End Row <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                </Label>
                 <Input
                   id="end-row"
                   type="number"
-                  min={1}
+                  min={rangeConfig.start_row || 1}
                   value={rangeConfig.end_row || ''}
                   onChange={(e) => setRangeConfig({ ...rangeConfig, end_row: e.target.value ? parseInt(e.target.value) : undefined })}
-                  placeholder="All rows"
+                  placeholder="Read all rows"
+                  className="font-mono"
                 />
-                <p className="text-xs text-muted-foreground mt-1">Last row to read (leave empty for all)</p>
+                <p className="text-xs text-muted-foreground">
+                  Last row to include. Leave empty to read until the end.
+                </p>
               </div>
 
-              <div>
-                <Label htmlFor="start-column">Start Column</Label>
+              <div className="space-y-2">
+                <Label htmlFor="start-column" className="flex items-center gap-2">
+                  Start Column <span className="text-xs text-muted-foreground font-normal">(required)</span>
+                </Label>
                 <Input
                   id="start-column"
                   type="text"
                   value={rangeConfig.start_column || 'A'}
-                  onChange={(e) => setRangeConfig({ ...rangeConfig, start_column: e.target.value.toUpperCase() || 'A' })}
+                  onChange={(e) => {
+                    const col = e.target.value.toUpperCase().replace(/[^A-Z]/g, '')
+                    setRangeConfig({ ...rangeConfig, start_column: col || 'A' })
+                  }}
                   placeholder="A"
                   maxLength={3}
+                  className="font-mono uppercase"
                 />
-                <p className="text-xs text-muted-foreground mt-1">First column (A, B, C, etc.)</p>
+                <p className="text-xs text-muted-foreground">
+                  First column to read (A, B, C, ..., Z, AA, AB, ...)
+                </p>
               </div>
 
-              <div>
-                <Label htmlFor="end-column">End Column (Optional)</Label>
+              <div className="space-y-2">
+                <Label htmlFor="end-column" className="flex items-center gap-2">
+                  End Column <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                </Label>
                 <Input
                   id="end-column"
                   type="text"
                   value={rangeConfig.end_column || ''}
-                  onChange={(e) => setRangeConfig({ ...rangeConfig, end_column: e.target.value.toUpperCase() || undefined })}
-                  placeholder="All columns"
+                  onChange={(e) => {
+                    const col = e.target.value.toUpperCase().replace(/[^A-Z]/g, '')
+                    setRangeConfig({ ...rangeConfig, end_column: col || undefined })
+                  }}
+                  placeholder="Read all columns"
                   maxLength={3}
+                  className="font-mono uppercase"
                 />
-                <p className="text-xs text-muted-foreground mt-1">Last column (leave empty for all)</p>
+                <p className="text-xs text-muted-foreground">
+                  Last column to include. Leave empty to read all.
+                </p>
               </div>
             </div>
 
-            <Button onClick={refreshPreview} disabled={isLoadingPreview} className="w-full">
+            {/* Validation Error Alert */}
+            {rangeValidationError && (
+              <Alert variant="destructive">
+                <AlertDescription>{rangeValidationError}</AlertDescription>
+              </Alert>
+            )}
+
+            {/* Range Summary */}
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">
+                📊 Range Preview
+              </p>
+              <p className="text-lg font-bold font-mono text-blue-900 dark:text-blue-100 mb-2">
+                {getRangeA1Notation(rangeConfig)}
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Starting at row {rangeConfig.start_row || 1}
+                {rangeConfig.end_row && `, ending at row ${rangeConfig.end_row}`}
+                {rangeConfig.start_column !== 'A' && `, from column ${rangeConfig.start_column}`}
+                {rangeConfig.end_column && ` to column ${rangeConfig.end_column}`}
+              </p>
+              {rangeConfig.header_row && rangeConfig.header_row !== rangeConfig.start_row && (
+                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                  Headers from row {rangeConfig.header_row}
+                </p>
+              )}
+            </div>
+
+            <Button onClick={refreshPreview} disabled={isLoadingPreview || !!rangeValidationError} className="w-full">
               {isLoadingPreview ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Updating Preview...
                 </>
               ) : (
-                'Apply Range & Refresh Preview'
+                '🔄 Apply Range & Refresh Preview'
               )}
             </Button>
           </CollapsibleContent>
@@ -438,8 +627,32 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
           </div>
           <div className="overflow-x-auto max-h-96">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
+              <thead>
+                {/* Column letter row (like Google Sheets) */}
+                <tr className="border-b bg-gray-100 dark:bg-gray-800/50">
+                  {/* Empty corner cell */}
+                  <th className="px-4 py-2 text-center font-medium text-xs w-16 sticky left-0 bg-gray-100 dark:bg-gray-800/50 border-r border-b">
+                    <span className="text-muted-foreground"></span>
+                  </th>
+
+                  {/* Column letters */}
+                  {previewData.columns.map((col, idx) => (
+                    <th key={`letter-${col}`} className="px-4 py-2 text-center font-medium text-xs bg-gray-100 dark:bg-gray-800/50">
+                      <span className="text-muted-foreground font-mono">
+                        {getColumnLetter(idx, rangeConfig.start_column)}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+
+                {/* Header row with column names */}
+                <tr className="bg-muted/50">
+                  {/* Header row number */}
+                  <th className="px-4 py-3 text-center font-medium text-xs w-16 sticky left-0 bg-gray-100 dark:bg-gray-800/50 border-r">
+                    <span className="text-muted-foreground font-mono">{rangeConfig.header_row || rangeConfig.start_row || 1}</span>
+                  </th>
+
+                  {/* Column names */}
                   {previewData.columns.map((col) => (
                     <th key={col} className="px-4 py-3 text-left font-medium">
                       {col}
@@ -450,6 +663,12 @@ export function GoogleSheetSelector({ credentials, onSelect }: GoogleSheetSelect
               <tbody className="divide-y">
                 {previewData.data.map((row, idx) => (
                   <tr key={idx} className="hover:bg-muted/30">
+                    {/* Row number cell */}
+                    <td className="px-4 py-3 text-xs font-mono text-muted-foreground text-center sticky left-0 bg-gray-100 dark:bg-gray-800/50 border-r">
+                      {(rangeConfig.start_row || 1) + idx}
+                    </td>
+
+                    {/* Data cells */}
                     {previewData.columns.map((col) => (
                       <td key={col} className="px-4 py-3">
                         {row[col] === null || row[col] === undefined ? (

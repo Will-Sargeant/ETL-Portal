@@ -113,7 +113,7 @@ async def preview_sheet_data(request: PreviewSheetRequest):
     Returns:
         dict: Contains preview data
             - columns: List of column names
-            - data: First 10 rows as list of dicts
+            - data: First 100 rows as list of dicts
             - total_rows: Total number of rows in preview
 
     Raises:
@@ -136,7 +136,7 @@ async def preview_sheet_data(request: PreviewSheetRequest):
 
         return {
             "columns": list(df.columns),
-            "data": df.head(10).to_dict('records'),
+            "data": df.head(100).to_dict('records'),
             "total_rows": len(df)
         }
 

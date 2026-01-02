@@ -122,6 +122,17 @@ export function SourceSelectionStep({
               <GoogleSheetSelector
                 credentials={googleCredentials}
                 onSelect={handleSheetSelect}
+                initialConfig={state.googleSheetsConfig ? {
+                  spreadsheetId: state.googleSheetsConfig.spreadsheet_id,
+                  sheetName: state.googleSheetsConfig.sheet_name,
+                  rangeConfig: {
+                    start_row: state.googleSheetsConfig.start_row,
+                    header_row: state.googleSheetsConfig.header_row,
+                    end_row: state.googleSheetsConfig.end_row,
+                    start_column: state.googleSheetsConfig.start_column,
+                    end_column: state.googleSheetsConfig.end_column,
+                  }
+                } : undefined}
               />
             </div>
           )}
