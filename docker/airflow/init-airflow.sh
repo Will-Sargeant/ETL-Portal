@@ -26,9 +26,12 @@ airflow connections create etl_portal_api \
     --conn-host backend \
     --conn-port 8000 2>/dev/null || true
 
-# Unpause the main etl_job_executor DAG so it can process jobs
-# Note: This command will fail if the DAG doesn't exist yet, which is fine
+# Unpause critical DAGs so they can operate immediately
+# Note: These commands will fail if the DAGs don't exist yet, which is fine
 airflow dags unpause etl_job_executor 2>/dev/null || true
+airflow dags unpause dag_health_monitor 2>/dev/null || true
+
+echo "Critical DAGs have been unpaused (if they exist)"
 
 # Execute the command passed to docker run (without quotes to allow word splitting)
 exec $@

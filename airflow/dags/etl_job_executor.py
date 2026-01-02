@@ -94,6 +94,7 @@ dag = DAG(
     catchup=False,
     max_active_runs=10,  # Allow up to 10 concurrent job executions
     tags=['etl', 'executor'],
+    is_paused_upon_creation=False,  # Auto-enable on deployment
 )
 
 # Single task to execute the ETL job
