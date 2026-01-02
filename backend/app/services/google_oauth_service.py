@@ -18,7 +18,10 @@ class GoogleOAuthService:
     def __init__(self):
         self.scopes = [
             'https://www.googleapis.com/auth/spreadsheets.readonly',
-            'https://www.googleapis.com/auth/drive.readonly'
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'openid'
         ]
 
     def get_authorization_url(self, redirect_uri: str = None) -> tuple[str, str]:

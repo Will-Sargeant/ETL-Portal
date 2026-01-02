@@ -8,6 +8,7 @@ import { JobEditPage } from './pages/JobEditPage'
 import { UnifiedJobWizardPage } from './pages/UnifiedJobWizardPage'
 import { UsersPage } from './pages/UsersPage'
 import { GoogleCallback } from './pages/GoogleCallback'
+import { GoogleLoginCallback } from './pages/GoogleLoginCallback'
 import { LoginPage } from './features/auth/LoginPage'
 import { ProtectedRoute } from './features/auth/ProtectedRoute'
 import { MainLayout } from './components/MainLayout'
@@ -23,6 +24,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/google/callback" element={<GoogleCallback />} />
+        <Route path="/auth/google/login" element={<GoogleLoginCallback />} />
         <Route
           path="/"
           element={

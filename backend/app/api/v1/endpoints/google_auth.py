@@ -10,6 +10,7 @@ from app.services.google_oauth_service import google_oauth_service
 from app.core.encryption import encrypt_credentials
 import structlog
 
+
 router = APIRouter()
 logger = structlog.get_logger()
 
@@ -36,6 +37,8 @@ async def get_google_auth_url():
     """
     try:
         auth_url, state = google_oauth_service.get_authorization_url()
+
+        logger.info("generated_auth_url", auth_url=auth_url, state=state)
 
         return {
             "auth_url": auth_url,
@@ -75,9 +78,21 @@ async def google_oauth_callback(request: OAuthCallbackRequest):
         HTTPException: 400 if code exchange fails
     """
     try:
+        logger.info(
+            "oauth_callback_received",
+            code_length=len(request.code),
+            code_prefix=request.code[:20] if request.code else None
+        )
+
         # Exchange code for credentials
         credentials = await google_oauth_service.exchange_code_for_credentials(
             code=request.code
+        )
+
+        logger.info(
+            "credentials_received",
+            has_access_token=bool(credentials.get('access_token')),
+            has_refresh_token=bool(credentials.get('refresh_token'))
         )
 
         # Encrypt credentials for storage
@@ -94,14 +109,22 @@ async def google_oauth_callback(request: OAuthCallbackRequest):
         }
 
     except ValueError as e:
-        logger.error("oauth_callback_failed", error=str(e))
+        logger.error(
+            "oauth_callback_failed_value_error",
+            error=str(e),
+            error_type=type(e).__name__
+        )
         raise HTTPException(
             status_code=400,
             detail=str(e)
         )
     except Exception as e:
-        logger.error("oauth_callback_failed", error=str(e))
+        logger.error(
+            "oauth_callback_failed_exception",
+            error=str(e),
+            error_type=type(e).__name__
+        )
         raise HTTPException(
             status_code=400,
-            detail="Failed to complete OAuth flow"
+            detail=f"Failed to complete OAuth flow: {str(e)}"
         )

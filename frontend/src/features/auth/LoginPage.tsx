@@ -1,4 +1,5 @@
 import { LocalLogin } from './LocalLogin'
+import { GoogleLogin } from './GoogleLogin'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
@@ -14,7 +15,7 @@ export function LoginPage() {
           <Tabs defaultValue="local" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="local">Email</TabsTrigger>
-              <TabsTrigger value="google" disabled>
+              <TabsTrigger value="google">
                 Google
               </TabsTrigger>
               <TabsTrigger value="saml" disabled>
@@ -25,11 +26,7 @@ export function LoginPage() {
               <LocalLogin />
             </TabsContent>
             <TabsContent value="google" className="mt-6">
-              <div className="p-8 text-center text-muted-foreground">
-                Google OAuth integration available.
-                <br />
-                Contact your administrator to enable.
-              </div>
+              <GoogleLogin />
             </TabsContent>
             <TabsContent value="saml" className="mt-6">
               <div className="p-8 text-center text-muted-foreground">

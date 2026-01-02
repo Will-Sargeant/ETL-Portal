@@ -138,23 +138,33 @@ ETL Portal uses JWT-based authentication with support for both local credentials
 - `POST /api/v1/auth/refresh` - Refresh access token using refresh token
 - `POST /api/v1/auth/logout` - Revoke refresh token
 
-#### 2. Google OAuth
+#### 2. Google OAuth (Single Sign-On)
 
 **How it works:**
-1. User clicks "Sign in with Google" button
-2. Frontend redirects to Google OAuth consent screen
+1. User clicks "Sign in with Google" button on login page
+2. Frontend redirects to Google OAuth consent screen with user authentication scopes
 3. User authorizes the application
-4. Google redirects back with authorization code
+4. Google redirects back to `/auth/google/login` with authorization code
 5. Frontend sends code to backend at `/api/v1/auth/google/login`
-6. Backend exchanges code for Google user info
-7. Backend creates user account (first time) or looks up existing user
-8. Backend issues JWT tokens same as local auth
+6. Backend exchanges code for Google ID token and verifies user identity
+7. Backend creates user account (first time) or looks up existing user by email
+8. Backend issues JWT tokens same as local auth (30 min access, 30 day refresh)
 9. Frontend stores tokens and redirects to app
 
 **First-time Google users:**
 - Automatically created with 'user' role
 - No password required (Google OAuth only)
+- Email and name synced from Google account
 - Profile picture synced from Google account
+
+**OAuth Scopes (User Authentication):**
+- `openid` - OpenID Connect for identity verification
+- `email` - Access to user's email address
+- `profile` - Access to user's name and profile picture
+
+**Redirect URI:** `http://localhost:3000/auth/google/login`
+- This is separate from the Google Sheets redirect URI
+- Users can use Google SSO for login while using local credentials for Google Sheets access (or vice versa)
 
 **API Endpoints:**
 - `POST /api/v1/auth/google/login` - Login with Google OAuth code
@@ -724,9 +734,10 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
 8. **Login credentials**:
 
    **ETL Portal** (http://localhost:3000):
-   - Admin: `admin@test.com` / `admin123`
-   - User: `user@test.com` / `user123`
-   - Or configure Google OAuth (see Google Sheets Integration Setup below)
+   - **Local Auth:**
+     - Admin: `admin@test.com` / `admin123`
+     - User: `user@test.com` / `user123`
+   - **Google SSO:** Configure Google OAuth (see Google SSO Setup below)
 
    **Airflow UI** (http://localhost:8080):
    - Username: `admin`
@@ -738,32 +749,49 @@ CSV → pandas DataFrame → Filter Columns → Rename → Transform
    - Test Database connection pre-configured
    - (See Metabase Setup section below for manual configuration if needed)
 
+9. **(Optional) Configure Google SSO**:
+
+   To enable "Sign in with Google" on the login page, see the [Google SSO Setup](#google-sso-setup) section below.
+
 ---
 
-### Google Sheets Integration Setup
+### Google SSO Setup
 
-To enable Google Sheets as a data source, configure Google Cloud OAuth 2.0 credentials. This is a **one-time admin setup** - once configured, all users can connect their personal Google accounts.
+To enable "Sign in with Google" on the login page, configure Google Cloud OAuth 2.0 credentials. This allows users to authenticate with their Google accounts instead of (or in addition to) email/password login.
+
+**Note:** Google SSO and Google Sheets are **separate OAuth flows** with different redirect URIs:
+- **Google SSO (User Login):** `http://localhost:3000/auth/google/login`
+- **Google Sheets (Data Source):** `http://localhost:3000/auth/google/callback`
+
+You can configure one or both. Users can log in with Google SSO and still use local credentials for Google Sheets access (or vice versa).
 
 #### 1. Create Google Cloud Project & Enable APIs
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (e.g., "ETL Portal")
-3. Enable required APIs:
-   - **Google Sheets API**: APIs & Services → Library → Search "Google Sheets API" → Enable
-   - **Google Drive API**: APIs & Services → Library → Search "Google Drive API" → Enable
+2. Create a new project (e.g., "ETL Portal") or use existing project
+3. No additional APIs need to be enabled for SSO (Google Sign-In works out of the box)
+   - If you also want Google Sheets integration, enable:
+     - **Google Sheets API**: APIs & Services → Library → Search "Google Sheets API" → Enable
+     - **Google Drive API**: APIs & Services → Library → Search "Google Drive API" → Enable
 
 #### 2. Configure OAuth Consent Screen
 
 1. Navigate to **APIs & Services** → **OAuth consent screen**
-2. Select **Internal** (for Google Workspace) or **External**
+2. Select **Internal** (for Google Workspace - users in your organization only) or **External** (anyone with a Google account)
 3. Fill in app information:
    - **App name**: ETL Portal
    - **User support email**: Your email
    - **Developer contact**: Your email
-4. Add scopes:
-   - `https://www.googleapis.com/auth/spreadsheets.readonly`
-   - `https://www.googleapis.com/auth/drive.readonly`
-5. Add test users if using External mode
+4. Add scopes for Google SSO:
+   - Click **Add or Remove Scopes**
+   - Select these scopes:
+     - `openid`
+     - `https://www.googleapis.com/auth/userinfo.email`
+     - `https://www.googleapis.com/auth/userinfo.profile`
+   - If also configuring Google Sheets, add these additional scopes:
+     - `https://www.googleapis.com/auth/spreadsheets.readonly`
+     - `https://www.googleapis.com/auth/drive.readonly`
+5. Add test users if using External mode (not required for Internal)
 6. Save and continue
 
 #### 3. Create OAuth Client Credentials
@@ -771,23 +799,35 @@ To enable Google Sheets as a data source, configure Google Cloud OAuth 2.0 crede
 1. Navigate to **APIs & Services** → **Credentials**
 2. Click **Create Credentials** → **OAuth 2.0 Client ID**
 3. Select **Web application**
-4. Add authorized redirect URI:
-   ```
-   http://localhost:3000/auth/google/callback
-   ```
-   *(Add production URLs like `https://etl.yourcompany.com/auth/google/callback` when deploying)*
+4. Add authorized redirect URIs:
+   - **For Google SSO (user login):**
+     ```
+     http://localhost:3000/auth/google/login
+     ```
+   - **For Google Sheets (data source) - if needed:**
+     ```
+     http://localhost:3000/auth/google/callback
+     ```
+   - **For production:** Add your production URLs:
+     ```
+     https://etl.yourcompany.com/auth/google/login
+     https://etl.yourcompany.com/auth/google/callback
+     ```
 5. Click **Create**
-6. **Copy the Client ID and Client Secret** (you'll need these next)
+6. **Copy the Client ID and Client Secret** - you'll need these in the next step
 
-#### 4. Configure ETL Portal
+#### 4. Configure Backend Environment
 
 1. Open `.env` file in the project root
-2. Update the Google OAuth credentials (already present in `.env.example`):
+2. Add/update the Google OAuth credentials:
    ```bash
    # Google OAuth Configuration
    GOOGLE_CLIENT_ID=your-actual-client-id.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=GOCSPX-your-actual-client-secret
-   GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
+
+   # Redirect URIs
+   GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback        # For Google Sheets
+   GOOGLE_LOGIN_REDIRECT_URI=http://localhost:3000/auth/google/login     # For SSO Login
    ```
    Replace `your-actual-client-id` and `your-actual-client-secret` with the values from step 3.
 
@@ -795,6 +835,101 @@ To enable Google Sheets as a data source, configure Google Cloud OAuth 2.0 crede
    ```bash
    docker-compose restart backend
    ```
+
+#### 5. Configure Frontend Environment
+
+1. Create/update `frontend/.env` file with the same Google Client ID:
+   ```bash
+   VITE_GOOGLE_CLIENT_ID=your-actual-client-id.apps.googleusercontent.com
+   ```
+
+2. If running frontend in Docker, restart:
+   ```bash
+   docker-compose restart frontend
+   ```
+
+3. If running frontend locally (`npm run dev`), restart the dev server
+
+#### 6. Using Google SSO
+
+Once configured, users can:
+
+1. Navigate to **Login Page**: http://localhost:3000/login
+2. Click the **Google** tab
+3. Click **Sign in with Google** button
+4. Authorize the application in the popup
+5. Automatically redirected to the app after successful authentication
+
+**First-time users:**
+- Accounts are automatically created with `user` role
+- No password is set (Google OAuth only)
+- Email, name, and profile picture synced from Google account
+- Admins can promote users to admin role in the Users page
+
+**Existing users:**
+- If an account already exists with the same email, Google login will authenticate that account
+- Works for both Google-created and locally-created accounts
+
+**Security:**
+- JWT tokens issued with 30-minute access token and 30-day refresh token
+- Refresh tokens stored in database with revocation capability
+- All standard authentication features work (logout, token refresh, etc.)
+
+---
+
+### Google Sheets Integration Setup
+
+To enable Google Sheets as a data source, configure Google Cloud OAuth 2.0 credentials. This is a **one-time admin setup** - once configured, all users can connect their personal Google accounts.
+
+**Note:** This is separate from Google SSO. The redirect URI for Google Sheets is `http://localhost:3000/auth/google/callback` (different from the SSO redirect URI).
+
+#### 1. Prerequisites
+
+If you've already set up Google SSO (above), you can skip to step 2. You'll use the same Google Cloud project and OAuth client.
+
+If you haven't set up Google Cloud yet:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (e.g., "ETL Portal")
+3. Enable required APIs:
+   - **Google Sheets API**: APIs & Services → Library → Search "Google Sheets API" → Enable
+   - **Google Drive API**: APIs & Services → Library → Search "Google Drive API" → Enable
+
+#### 2. Add Google Sheets Scopes
+
+1. Navigate to **APIs & Services** → **OAuth consent screen**
+2. Click **Edit App**
+3. Go to **Scopes** section
+4. Click **Add or Remove Scopes**
+5. Add these scopes (if not already added):
+   - `https://www.googleapis.com/auth/spreadsheets.readonly`
+   - `https://www.googleapis.com/auth/drive.readonly`
+6. Save and continue
+
+#### 3. Add Google Sheets Redirect URI
+
+1. Navigate to **APIs & Services** → **Credentials**
+2. Click on your existing OAuth 2.0 Client ID
+3. Add authorized redirect URI (if not already added):
+   ```
+   http://localhost:3000/auth/google/callback
+   ```
+   *(Add production URLs like `https://etl.yourcompany.com/auth/google/callback` when deploying)*
+4. Click **Save**
+
+#### 4. Verify Configuration
+
+Your `.env` file should already have the Google credentials from the SSO setup. Just verify that `GOOGLE_REDIRECT_URI` is set:
+
+```bash
+GOOGLE_CLIENT_ID=your-actual-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-your-actual-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback  # For Google Sheets
+```
+
+If you made any changes, restart backend:
+```bash
+docker-compose restart backend
+```
 
 #### 5. Using Google Sheets
 
@@ -1095,10 +1230,11 @@ TEST_DB_NAME=test_db
 ENCRYPTION_KEY=<your-fernet-key>
 SECRET_KEY=<your-jwt-secret-key>  # Generate with: openssl rand -hex 32
 
-# Authentication & Google OAuth (Optional - for Google Sign-In)
+# Google OAuth (Optional - for Google SSO and/or Google Sheets)
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
-GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback        # For Google Sheets
+GOOGLE_LOGIN_REDIRECT_URI=http://localhost:3000/auth/google/login     # For SSO Login
 
 # File Upload
 UPLOAD_DIR=/app/uploads

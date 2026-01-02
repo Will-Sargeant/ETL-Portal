@@ -55,9 +55,15 @@ class Settings(BaseSettings):
     # Google OAuth
     GOOGLE_CLIENT_ID: str = Field(default="", env="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = Field(default="", env="GOOGLE_CLIENT_SECRET")
+    # For Google Sheets access (popup flow)
     GOOGLE_REDIRECT_URI: str = Field(
         default="http://localhost:3000/auth/google/callback",
         env="GOOGLE_REDIRECT_URI"
+    )
+    # For user login (redirect flow)
+    GOOGLE_LOGIN_REDIRECT_URI: str = Field(
+        default="http://localhost:3000/auth/google/login",
+        env="GOOGLE_LOGIN_REDIRECT_URI"
     )
 
     class Config:
